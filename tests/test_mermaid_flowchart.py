@@ -158,8 +158,8 @@ class TestFlowchartRenderer:
         added = len(slide.shapes) - initial
         assert added == 2
 
-    def test_render_edge_with_label_adds_textbox(self) -> None:
-        """ラベル付きエッジがテキストボックスを追加することを確認する。"""
+    def test_render_edge_with_label_sets_connector_label(self) -> None:
+        """ラベル付きエッジがコネクター自体にラベルを設定することを確認する。"""
         slide = _make_slide()
         initial = len(slide.shapes)
         graph_data = self._make_graph_data(
@@ -167,10 +167,8 @@ class TestFlowchartRenderer:
             edges=[{"start": "A", "end": "B", "stroke": "normal", "type": "arrow_point", "text": "条件"}],
         )
         self.renderer.render(slide, graph_data, "", Emu(0), Emu(0), Emu(9000000), Emu(5000000))
-        # 2ノード + (コネクターとテキストボックスのグループ or 独立Shape) が追加される
-        # グループ化成功時: 2ノード + 1グループ = 3追加
-        # グループ化失敗時（フォールバック）: 2ノード + 1コネクター + 1テキストボックス = 4追加
-        assert len(slide.shapes) >= initial + 3
+        # 2ノード + 1コネクター（コネクターXMLにラベル埋め込み）= 3追加
+        assert len(slide.shapes) == initial + 3
 
     def test_render_fallback_on_empty_vertices(self) -> None:
         """vertices が空の場合はフォールバック（テキストボックス）が追加される。"""
@@ -263,3 +261,102 @@ class TestMermaidRendererFlowchart:
             Emu(500000), Emu(500000), Emu(7000000), Emu(4000000)
         )
         assert len(slide.shapes) > 0
+
+
+# ------------------------------------------------------------------
+# _extract_direction のテスト
+# ------------------------------------------------------------------
+
+class TestExtractDirection:
+    """_extract_directionが描画方向を正しく抽出することを確認する。"""
+
+    def setup_method(self) -> None:
+        self.renderer = FlowchartRenderer()
+
+    def test_flowchart_td(self) -> None:
+        """'flowchart TD' から 'TD' を返す。"""
+        assert self.renderer._extract_direction("flowchart TD\n  A --> B") == "TD"
+
+    def test_flowchart_lr(self) -> None:
+        """'flowchart LR' から 'LR' を返す。"""
+        assert self.renderer._extract_direction("flowchart LR\n  A --> B") == "LR"
+
+    def test_graph_bt(self) -> None:
+        """'graph BT' から 'BT' を返す。"""
+        assert self.renderer._extract_direction("graph BT\n  A --> B") == "BT"
+
+    def test_graph_rl(self) -> None:
+        """'graph RL' から 'RL' を返す。"""
+        assert self.renderer._extract_direction("graph RL\n  A --> B") == "RL"
+
+    def test_case_insensitive(self) -> None:
+        """方向指定は大文字小文字を区別しない。"""
+        assert self.renderer._extract_direction("flowchart lr\n  A --> B") == "LR"
+
+    def test_default_td_when_no_direction(self) -> None:
+        """方向指定がない場合はデフォルト 'TD' を返す。"""
+        assert self.renderer._extract_direction("flowchart\n  A --> B") == "TD"
+
+    def test_default_td_when_empty(self) -> None:
+        """空文字列の場合はデフォルト 'TD' を返す。"""
+        assert self.renderer._extract_direction("") == "TD"
+
+
+# ------------------------------------------------------------------
+# _hierarchical_layout のテスト
+# ------------------------------------------------------------------
+
+class TestHierarchicalLayout:
+    """_hierarchical_layoutがDAG階層レイアウトを正しく計算することを確認する。"""
+
+    def setup_method(self) -> None:
+        import networkx as nx
+        self.renderer = FlowchartRenderer()
+        self.nx = nx
+
+    def _make_dag(self, edges: list[tuple[str, str]]) -> object:
+        G = self.nx.DiGraph()
+        for src, dst in edges:
+            G.add_edge(src, dst)
+        return G
+
+    def test_linear_dag_td(self) -> None:
+        """A→B→C のTD配置でA,B,Cが上から下に並ぶこと。"""
+        G = self._make_dag([("A", "B"), ("B", "C")])
+        pos = self.renderer._hierarchical_layout(G, "TD")
+        # TD: y座標がA < B < C（上→下）
+        assert pos["A"][1] < pos["B"][1] < pos["C"][1]
+
+    def test_linear_dag_bt(self) -> None:
+        """BTではy座標が反転してA > B > C になること。"""
+        G = self._make_dag([("A", "B"), ("B", "C")])
+        pos = self.renderer._hierarchical_layout(G, "BT")
+        assert pos["A"][1] > pos["B"][1] > pos["C"][1]
+
+    def test_linear_dag_lr(self) -> None:
+        """LRではx座標がA < B < C になること。"""
+        G = self._make_dag([("A", "B"), ("B", "C")])
+        pos = self.renderer._hierarchical_layout(G, "LR")
+        assert pos["A"][0] < pos["B"][0] < pos["C"][0]
+
+    def test_linear_dag_rl(self) -> None:
+        """RLではx座標がA > B > C になること。"""
+        G = self._make_dag([("A", "B"), ("B", "C")])
+        pos = self.renderer._hierarchical_layout(G, "RL")
+        assert pos["A"][0] > pos["B"][0] > pos["C"][0]
+
+    def test_all_nodes_in_range(self) -> None:
+        """全ノードの座標が -1.0〜1.0 の範囲内であること。"""
+        G = self._make_dag([("A", "B"), ("A", "C"), ("B", "D")])
+        pos = self.renderer._hierarchical_layout(G, "TD")
+        for node_id, (x, y) in pos.items():
+            assert -1.0 <= x <= 1.0, f"{node_id} の x={x} が範囲外"
+            assert -1.0 <= y <= 1.0, f"{node_id} の y={y} が範囲外"
+
+    def test_cyclic_graph_fallback(self) -> None:
+        """サイクルを含むグラフはフォールバックして例外を起こさないこと。"""
+        G = self.nx.DiGraph()
+        G.add_edges_from([("A", "B"), ("B", "C"), ("C", "A")])
+        pos = self.renderer._hierarchical_layout(G, "TD")
+        # フォールバックでも全ノードの座標が返ること
+        assert set(pos.keys()) == {"A", "B", "C"}

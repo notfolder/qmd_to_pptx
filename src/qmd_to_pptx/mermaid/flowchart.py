@@ -3,9 +3,12 @@
 
 flowchart / graph 系のMermaid記法を解析し、14種類のノード形状・
 7種類のエッジ矢印・4種類の線種・エッジラベルに対応してスライドに描画する。
+描画方向（TD/TB/BT/LR/RL）を考慮したDAG階層レイアウトをサポートする。
 """
 
 from __future__ import annotations
+
+import re
 
 import networkx as nx
 from lxml import etree as lxml_etree
@@ -49,10 +52,6 @@ _EDGE_ARROW_MAP: dict[str, dict[str, str]] = {
     "arrow_cross":         {"headEnd": "arrow"},                    # ×端（arrow で代替）
     "double_arrow_cross":  {"headEnd": "arrow", "tailEnd": "arrow"},# 両方向×端
 }
-
-# ラベルテキストボックスのサイズ（EMU）
-_LABEL_WIDTH_EMU: int = 900000
-_LABEL_HEIGHT_EMU: int = 320000
 
 
 class FlowchartRenderer(BaseDiagramRenderer):
@@ -112,11 +111,9 @@ class FlowchartRenderer(BaseDiagramRenderer):
                 if src is not None and dst is not None:
                     G.add_edge(str(src), str(dst))
 
-        # kamada_kawai_layoutでノード配置の重なりを軽減する（失敗時はspring_layoutにフォールバック）
-        try:
-            pos: dict[str, tuple[float, float]] = nx.kamada_kawai_layout(G)
-        except Exception:
-            pos = nx.spring_layout(G, seed=42, k=2.0)
+        # mermaid_textから描画方向を取得して階層レイアウトを計算する
+        direction = self._extract_direction(mermaid_text)
+        pos: dict[str, tuple[float, float]] = self._hierarchical_layout(G, direction)
 
         # 頂点をシェイプ種別に応じて描画する
         node_shapes = self._draw_nodes_flowchart(
@@ -152,7 +149,7 @@ class FlowchartRenderer(BaseDiagramRenderer):
         vertices : dict
             ノードID → {"text": str, "type": str, ...} の辞書。
         pos : dict[str, tuple[float, float]]
-            ノードIDをキー、spring_layout正規化座標を値とする辞書。
+            ノードIDをキー、正規化座標を値とする辞書。
         left, top, width, height : int
             描画エリアのEMU座標。
 
@@ -260,7 +257,7 @@ class FlowchartRenderer(BaseDiagramRenderer):
         stroke="invisible" のエッジはコネクター自体を生成しない。
         stroke="dotted" は破線、stroke="thick" は3pt実線を適用する。
         edge_type で headEnd/tailEnd の矢印形状を決定する。
-        text が設定されている場合はコネクター中点にテキストボックスを追加する。
+        text が設定されている場合はコネクターXMLにラベルテキストを直接設定する。
 
         Parameters
         ----------
@@ -269,7 +266,7 @@ class FlowchartRenderer(BaseDiagramRenderer):
         raw_edges : list
             mermaid-parser-py の edges リスト。各要素に start/end/stroke/type/text を持つ。
         pos : dict[str, tuple[float, float]]
-            ノードIDをキー、spring_layout正規化座標を値とする辞書。
+            ノードIDをキー、正規化座標を値とする辞書。
         node_shapes : dict[str, object]
             ノードIDをキー、Shapeオブジェクトを値とする辞書。
         left, top, width, height : int
@@ -347,22 +344,145 @@ class FlowchartRenderer(BaseDiagramRenderer):
                 tail.set("w", "med")
                 tail.set("len", "med")
 
-            # ラベルがある場合はコネクター中点にテキストボックスを追加しグループ化する
+            # ラベルがある場合はコネクターXMLにテキストを直接設定する（グループ化不要）
             if edge_label:
-                cx_pos = (sx + dx) // 2 - _LABEL_WIDTH_EMU // 2
-                cy_pos = (sy + dy) // 2 - _LABEL_HEIGHT_EMU // 2
-                tb = slide.shapes.add_textbox(
-                    Emu(cx_pos), Emu(cy_pos),
-                    Emu(_LABEL_WIDTH_EMU), Emu(_LABEL_HEIGHT_EMU),
+                self._set_connector_label(connector, edge_label)
+
+    def _extract_direction(self, mermaid_text: str) -> str:
+        """
+        Mermaidテキストの宣言行から描画方向を抽出する。
+
+        "flowchart LR" や "graph TD" のような宣言行から
+        方向キーワードを取得する。見つからない場合は "TD"（上→下）を返す。
+
+        Parameters
+        ----------
+        mermaid_text : str
+            Mermaidフローチャートのテキスト。
+
+        Returns
+        -------
+        str
+            描画方向（"TD" / "TB" / "BT" / "LR" / "RL"）。デフォルトは "TD"。
+        """
+        match = re.search(
+            r'(?:flowchart|graph)\s+(TD|TB|LR|RL|BT)\b',
+            mermaid_text,
+            re.IGNORECASE,
+        )
+        return match.group(1).upper() if match else "TD"
+
+    def _hierarchical_layout(
+        self,
+        G: nx.DiGraph,
+        direction: str,
+    ) -> dict[str, tuple[float, float]]:
+        """
+        描画方向に基づいたDAG階層レイアウト座標を計算する。
+
+        グラフがDAGである場合はトポロジカル世代でレベルを決定し、
+        各レベル内のノードを均等配置した正規化座標（-1.0〜1.0）を返す。
+        サイクルを含むグラフはkamada_kawai → spring_layoutにフォールバックする。
+
+        Parameters
+        ----------
+        G : nx.DiGraph
+            レイアウト計算対象の有向グラフ。
+        direction : str
+            描画方向（"TD" / "TB" / "BT" / "LR" / "RL"）。
+
+        Returns
+        -------
+        dict[str, tuple[float, float]]
+            ノードIDをキー、正規化座標(-1.0〜1.0)のタプルを値とする辞書。
+        """
+        # サイクルを含む場合はkamada_kawai → spring_layoutにフォールバック
+        if not nx.is_directed_acyclic_graph(G):
+            try:
+                return nx.kamada_kawai_layout(G)
+            except Exception:
+                return nx.spring_layout(G, seed=42, k=2.0)
+
+        # トポロジカル世代でノードをレベルに分類する
+        generations = list(nx.topological_generations(G))
+        n_levels = len(generations)
+        pos: dict[str, tuple[float, float]] = {}
+
+        for level_idx, level_nodes in enumerate(generations):
+            n_in_level = len(level_nodes)
+            # レベル軸の正規化座標（最初の世代=-1.0, 最後の世代=+1.0）
+            level_norm = (
+                -1.0 + 2.0 * level_idx / (n_levels - 1)
+                if n_levels > 1
+                else 0.0
+            )
+            for node_idx, node_id in enumerate(sorted(level_nodes)):
+                # 同レベル内での均等配置座標
+                span_norm = (
+                    -1.0 + 2.0 * node_idx / (n_in_level - 1)
+                    if n_in_level > 1
+                    else 0.0
                 )
-                tf = tb.text_frame
-                tf.word_wrap = False
-                para = tf.paragraphs[0]
-                run = para.add_run()
-                run.text = edge_label
-                run.font.size = Pt(10)
-                # コネクターとラベルをグループ化して位置関係を保つ
-                try:
-                    slide.shapes.add_group_shape([connector, tb])
-                except Exception:
-                    pass  # グループ化失敗時は独立Shapeのまま維持する
+                if direction in ("TD", "TB"):
+                    # 上→下: level_normがy軸（-1.0=上端, +1.0=下端）
+                    pos[node_id] = (span_norm, level_norm)
+                elif direction == "BT":
+                    # 下→上: y軸を反転
+                    pos[node_id] = (span_norm, -level_norm)
+                elif direction == "LR":
+                    # 左→右: level_normがx軸（-1.0=左端, +1.0=右端）
+                    pos[node_id] = (level_norm, span_norm)
+                elif direction == "RL":
+                    # 右→左: x軸を反転
+                    pos[node_id] = (-level_norm, span_norm)
+                else:
+                    # 未知の方向はTD（上→下）として扱う
+                    pos[node_id] = (span_norm, level_norm)
+
+        return pos
+
+    def _set_connector_label(
+        self,
+        connector: object,
+        text: str,
+        font_size_pt: int = 10,
+    ) -> None:
+        """
+        コネクターのDrawingML XML要素にテキストラベルを直接設定する。
+
+        <p:cxnSp> 要素に <p:txBody> を追加してラベルをコネクター自体に持たせる。
+        グループ化による接続ポイント消失を回避する。
+
+        Parameters
+        ----------
+        connector : object
+            python-pptxのConnectorオブジェクト。
+        text : str
+            設定するラベルテキスト。
+        font_size_pt : int
+            フォントサイズ（ポイント）。デフォルト10pt。
+        """
+        cxn_el = connector._element
+        # 既存のtxBodyを削除して重複追加を防ぐ
+        for existing in cxn_el.findall(qn("p:txBody")):
+            cxn_el.remove(existing)
+
+        # <p:txBody> を構築してcxnSp要素に追加する
+        txBody = lxml_etree.SubElement(cxn_el, qn("p:txBody"))
+
+        # テキスト本文プロパティ: 垂直中央揃え・折り返しあり
+        bodyPr = lxml_etree.SubElement(txBody, qn("a:bodyPr"))
+        bodyPr.set("anchor", "ctr")
+        bodyPr.set("wrap", "square")
+
+        # リストスタイル（OOXML必須要素）
+        lxml_etree.SubElement(txBody, qn("a:lstStyle"))
+
+        # テキスト段落とランを追加する
+        p_el = lxml_etree.SubElement(txBody, qn("a:p"))
+        r_el = lxml_etree.SubElement(p_el, qn("a:r"))
+        rPr = lxml_etree.SubElement(r_el, qn("a:rPr"))
+        rPr.set("dirty", "0")
+        rPr.set("sz", str(font_size_pt * 100))  # sz は 1/100ポイント単位
+        t_el = lxml_etree.SubElement(r_el, qn("a:t"))
+        t_el.text = text
