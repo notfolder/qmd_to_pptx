@@ -136,8 +136,64 @@ class SlideRenderer:
                 slide, nodes, layout_name, effective_ref_doc, metadata
             )
 
+        # presentation.xml の notesMasterIdLst を補完する（python-pptxのバグ回避）
+        self._fix_notes_master_id_lst(prs)
+
         # PPTXファイルを保存する
         prs.save(output)
+
+    def _fix_notes_master_id_lst(self, prs: Presentation) -> None:
+        """
+        presentation.xml に notesMasterIdLst 要素がなければ追加する。
+
+        python-pptx は notes_slide アクセス時に notesMaster を生成して
+        presentation.xml.rels には登録するが、presentation.xml 本体の
+        <p:notesMasterIdLst> 要素を追加しない。PowerPoint はその不整合を
+        「フォーマットエラー」として報告するため、ここで補完する。
+
+        Parameters
+        ----------
+        prs : Presentation
+            保存前の Presentation オブジェクト。
+        """
+        from lxml import etree
+
+        P_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
+        R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+
+        prs_part = prs.part
+        prs_elem = prs_part._element
+
+        # すでに notesMasterIdLst が存在すれば何もしない
+        if prs_elem.find(f"{{{P_NS}}}notesMasterIdLst") is not None:
+            return
+
+        # presentation.xml.rels から notesMaster の rId を探す
+        notes_master_rid = None
+        for rId, rel in prs_part.rels.items():
+            if "notesMaster" in rel.reltype:
+                notes_master_rid = rId
+                break
+
+        # notesMaster が登録されていなければ補完不要
+        if notes_master_rid is None:
+            return
+
+        # notesMasterIdLst 要素と子要素を生成する
+        notes_master_id_lst = etree.Element(f"{{{P_NS}}}notesMasterIdLst")
+        etree.SubElement(
+            notes_master_id_lst,
+            f"{{{P_NS}}}notesMasterId",
+            {f"{{{R_NS}}}id": notes_master_rid},
+        )
+
+        # sldMasterIdLst の直後に挿入する（OOXMLスキーマの要素順序に従う）
+        sld_master_id_lst = prs_elem.find(f"{{{P_NS}}}sldMasterIdLst")
+        if sld_master_id_lst is not None:
+            idx = list(prs_elem).index(sld_master_id_lst)
+            prs_elem.insert(idx + 1, notes_master_id_lst)
+        else:
+            prs_elem.insert(0, notes_master_id_lst)
 
     def _load_layout_json(self) -> LayoutJSON:
         """
