@@ -34,10 +34,12 @@ flowchart TD
 | 用途 | ライブラリ |
 |---|---|
 | Markdown解析 | Python-Markdown |
+| Markdown拡張extension | PyMdown Extensions |
 | Mermaid解析 | mermaid-parser-py |
 | グラフレイアウト | NetworkX |
 | PowerPoint生成 | python-pptx |
 | LaTeX → MathML変換 | latex2mathml |
+| MathML → OMML変換 | mathml2omml |
 
 ---
 
@@ -295,7 +297,7 @@ flowchart LR
 | レイアウト名 | 適用条件 |
 |---|---|
 | Title Slide | プレゼンテーション冒頭のメタデータ（title・author・date）から自動生成する最初のスライド。これらの値が空文字の場合も空のTitle Slideとして生成する |
-| Section Header | `#`（レベル1見出し）による分割で生成されるスライド |
+| Section Header | `#`（レベル1見出し）による分割で生成されるスライド。ただし `slide-level: 1` の場合は `#` 見出しがコンテンツスライドとして扱われるため、Section Headerは生成されない |
 | Two Content | `.columns` divが存在し、内部に2つ以上の `.column` divを含み、各カラムがテキストのみで構成されるスライド |
 | Comparison | `.columns` divが存在し、少なくとも1カラムがテキストの後に非テキスト（図・表など）を含むスライド |
 | Content with Caption | 1カラム構成でテキストの後に非テキスト（図・表など）が続くスライド |
@@ -310,7 +312,7 @@ flowchart LR
 
 ### 4.9 レイアウト定義JSON
 
-**責務：** `reference_doc` が未指定の場合（パターンA）、またはテンプレートに目的のプレースホルダーが存在しない場合（パターンC）に、コンテンツの配置座標をスライドレンダラーへ提供する。
+**責務：** `reference_doc` が未指定の場合（パターンA）、テンプレートに目的のプレースホルダーが存在しない場合（パターンC）、またはプレースホルダーが一部欠けている場合（パターンD）に、コンテンツの配置座標をスライドレンダラーへ提供する。
 
 **ファイル：** `default_layout.json`（ライブラリパッケージに同梱）
 
