@@ -124,17 +124,52 @@ flowchart TD
     I --> J([終了])
 ```
 
-## 2. シーケンス図（Sequence Diagram）
+## 2a. シーケンス図 - 基本（autonumber・activate・Note）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as ユーザー
+    participant C as クライアント
+    participant S as サーバー
+    participant D as データベース
+
+    U->>C: ログインボタン押下
+    C->>+S: 認証リクエスト
+    Note right of S: セッション確認中
+    S->>+D: ユーザー照会
+    D-->>-S: ユーザー情報返却
+    alt 認証成功
+        S-->>-C: 認証トークン発行
+        C-->>U: ログイン完了
+    else 認証失敗
+        S-xC: 認証エラー
+        C-->>U: エラーメッセージ表示
+    end
+```
+
+## 2b. シーケンス図 - フレーム（loop・par・rect背景）
 
 ```mermaid
 sequenceDiagram
     participant A as クライアント
     participant B as サーバー
     participant C as データベース
-    A->>B: リクエスト送信
-    B->>C: クエリ実行
-    C-->>B: 結果返却
-    B-->>A: レスポンス返却
+
+    rect rgb(200, 240, 255)
+        A->>B: リクエスト送信
+        loop リトライ（最大3回）
+            B->>C: クエリ実行
+            C-->>B: 結果返却
+        end
+    end
+    par 非同期通知
+        B-)A: 完了通知
+    and 非同期ログ
+        B-)C: ログ書き込み
+    end
+    Note over A,B: 処理完了
+    A->>A: 内部状態更新
 ```
 
 ## 3. ガントチャート（Gantt Diagram）

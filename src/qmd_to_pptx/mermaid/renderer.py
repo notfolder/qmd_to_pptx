@@ -16,6 +16,7 @@ from .class_diagram import ClassDiagramRenderer
 from .er_diagram import ErDiagramRenderer
 from .flowchart import FlowchartRenderer
 from .mindmap import MindmapRenderer
+from .sequence_diagram import SequenceDiagramRenderer
 from .state_diagram import StateDiagramRenderer
 
 
@@ -35,6 +36,7 @@ class MermaidRenderer:
         self._state_diagram = StateDiagramRenderer()
         self._er_diagram = ErDiagramRenderer()
         self._mindmap = MindmapRenderer()
+        self._sequence = SequenceDiagramRenderer()
         # フォールバック描画は BaseDiagramRenderer に委ねる
         self._base = BaseDiagramRenderer()
 
@@ -77,6 +79,10 @@ class MermaidRenderer:
             self._base._render_fallback(slide, mermaid_text, left, top, width, height)
             return
 
+        # sequenceDiagram は graph_type="sequence" で返るが、
+        # パーサー呼び出し前に first_line で早期検出して直接委譲することもできる
+        # （パーサーが正常に対応していることを確認済みのため、パーサー経由で処理する）
+
         try:
             # mermaid-parser-pyでノードとエッジを取得する
             mp = MermaidParser()
@@ -89,6 +95,9 @@ class MermaidRenderer:
             return
 
         # graph_typeに応じて専用レンダラーへ分岐する
+        if graph_type == "sequence":
+            self._sequence.render(slide, graph_data, left, top, width, height)
+            return
         if graph_type == "stateDiagram":
             self._state_diagram.render(slide, graph_data, left, top, width, height)
             return
