@@ -96,7 +96,9 @@ class TextRenderer:
         incremental: bool = False,
     ) -> None:
         """
-        shapeのテキストフレームにインデント付きの箇条書きリストを書き込む。
+        shapeのテキストフレームにインデント付きのリストを書き込む。
+
+        ulタグの場合は箇条書き（bullet）、olタグの場合は番号付きリストとして処理する。
 
         Parameters
         ----------
@@ -111,8 +113,12 @@ class TextRenderer:
         tf.clear()
         tf.word_wrap = True
         first_para = True
+        # 最上位のリストタグが ol かどうかを判定する
+        ordered = element.tag == "ol"
 
-        self._render_list_items(tf, element, level=0, first_para_ref=[first_para])
+        self._render_list_items(
+            tf, element, level=0, first_para_ref=[first_para], ordered=ordered
+        )
 
     def _render_list_items(
         self,
@@ -120,6 +126,7 @@ class TextRenderer:
         element: ET.Element,
         level: int,
         first_para_ref: list[bool],
+        ordered: bool = False,
     ) -> None:
         """
         リストアイテムを再帰的にテキストフレームに書き込む。
@@ -134,8 +141,14 @@ class TextRenderer:
             ネストレベル（インデントに使用）。
         first_para_ref : list[bool]
             最初の段落かどうかのフラグ（リスト経由で参照共有）。
+        ordered : bool
+            Trueの場合、番号付きリストとして処理する。
         """
-        from pptx.util import Pt
+        from lxml import etree
+
+        # DrawingML の名前空間
+        _A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+
         for item in element:
             if item.tag != "li":
                 continue
@@ -154,11 +167,34 @@ class TextRenderer:
             run.text = item_text
             run.font.size = self._DEFAULT_FONT_SIZE
 
+            if ordered:
+                # 番号付きリスト: <a:buAutoNum> を pPr に設定する
+                # python-pptx は buAutoNum を直接サポートしないため lxml で操作する
+                p_elem = para._p
+                # 既存の pPr を取得または生成する
+                pPr = p_elem.find(f"{{{_A_NS}}}pPr")
+                if pPr is None:
+                    pPr = etree.SubElement(p_elem, f"{{{_A_NS}}}pPr")
+                    p_elem.insert(0, pPr)
+                # 既存の buChar/buNone/buAutoNum を除去する
+                for tag in ("buNone", "buChar", "buAutoNum"):
+                    old = pPr.find(f"{{{_A_NS}}}{tag}")
+                    if old is not None:
+                        pPr.remove(old)
+                # 番号付きリストマーカーを設定する（arabicPeriod = 「1.」形式）
+                etree.SubElement(
+                    pPr,
+                    f"{{{_A_NS}}}buAutoNum",
+                    attrib={"type": "arabicPeriod"},
+                )
+
             # ネストリスト（ul/ol）を再帰処理する
             for child in item:
                 if child.tag in ("ul", "ol"):
+                    # ネストされたリストは子タグのol/ulに従って順序を決定する
                     self._render_list_items(
-                        tf, child, level + 1, first_para_ref
+                        tf, child, level + 1, first_para_ref,
+                        ordered=(child.tag == "ol"),
                     )
 
     def _get_direct_text(self, element: ET.Element) -> str:
