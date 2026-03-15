@@ -139,15 +139,15 @@ classDiagram
     }
 
     class DOMTraverser {
-        +traverse(root: Element) Generator
+        +traverse(root: Element) list
     }
 
     class TextRenderer {
-        +render_heading(slide, element: Element, level: int)
-        +render_paragraph(slide, element: Element)
-        +render_list(slide, element: Element, incremental: bool)
-        +render_table(slide, element: Element)
-        +render_code(slide, element: Element)
+        +render_heading(shape, element: Element, level: int)
+        +render_paragraph(shape, element: Element)
+        +render_list(shape, element: Element, incremental: bool)
+        +render_table(slide, element: Element, left: int, top: int, width: int, height: int)
+        +render_code(shape, element: Element)
         +render_notes(slide, element: Element)
     }
 
@@ -288,7 +288,7 @@ classDiagram
 
 | メソッド | 引数 | 戻り値 | 処理内容 |
 |---|---|---|---|
-| `traverse` | `root: Element` | `Generator[DOMNodeInfo]` | DOMツリーを深さ優先で走査し、ノード種別をタグ名・クラス属性で判定して `DOMNodeInfo` をyieldするジェネレーターを返す |
+| `traverse` | `root: Element` | `list[DOMNodeInfo]` | DOMツリーを深さ優先で走査し、ノード種別をタグ名・クラス属性で判定した `DOMNodeInfo` のリストを生成して返す |
 
 #### SlideRenderer
 
@@ -298,8 +298,8 @@ classDiagram
 | `_load_layout_json` | なし | `LayoutJSON` | パッケージ同梱の `resources/default_layout.json` を読み込み `LayoutJSON` オブジェクトを生成する |
 | `_select_layout` | `content: SlideContent`, `nodes: list[DOMNodeInfo]` | `str` | `SlideContent` の区切り種別と `nodes` 内のノード構成（`.columns` divの有無・テキスト/非テキストの混在）を元に `QMD_TO_PPTX_DESIGN.md` 4.8節のレイアウト自動選択ルールを適用してレイアウト名を返す |
 | `_resolve_placeholder` | `slide`, `idx: int` | `bool` | `slide.placeholders` に指定 `idx` が存在する場合は `True` を返す |
-| `_write_via_placeholder` | `slide`, `idx: int`, `element: Element` | `None` | `slide.placeholders[idx]` のテキストフレームに `element` のコンテンツを書き込む（パターンB・Dで使用） |
-| `_write_via_textbox` | `slide`, `role: str`, `layout_def: LayoutDef`, `element: Element` | `None` | `LayoutDef.placeholders` を `role` で線形探索して `PlaceholderInfo` の座標情報を取得し、`add_textbox()` を呼び出して `element` のコンテンツを配置する（パターンA・C・Dで使用） |
+| `_write_via_placeholder` | `slide`, `idx: int`, `element: Element` | `None` | `slide.placeholders[idx]` を取得し、テキスト系ノードはそのshapeを `TextRenderer` の対応メソッドに渡してコンテンツを書き込む。テーブルノードはプレースホルダーの座標を取得して `TextRenderer.render_table()` を呼び出す（パターンB・Dで使用） |
+| `_write_via_textbox` | `slide`, `role: str`, `layout_def: LayoutDef`, `element: Element` | `None` | `LayoutDef.placeholders` を `role` で線形探索して座標情報を取得し、テキスト系ノードは `add_textbox()` で作成したshapeを `TextRenderer` の対応メソッドに渡して書き込む。テーブルノードは `TextRenderer.render_table()` に座標を渡す（パターンA・C・Dで使用） |
 
 **プレースホルダーパターン適用方針：**
 
@@ -316,11 +316,11 @@ classDiagram
 
 | メソッド | 引数 | 戻り値 | 処理内容 |
 |---|---|---|---|
-| `render_heading` | `slide`, `element: Element`, `level: int` | `None` | 見出しテキストをh1/h2に応じたスタイルのテキストボックスとしてスライドに追加する |
-| `render_paragraph` | `slide`, `element: Element` | `None` | 段落テキストをテキストボックスとしてスライドに追加する |
-| `render_list` | `slide`, `element: Element`, `incremental: bool` | `None` | 箇条書きリストをインデント付きテキストボックスとして追加する。`incremental=True` の場合はアニメーション逐次表示を設定する |
-| `render_table` | `slide`, `element: Element` | `None` | `<table>` 要素からPowerPointテーブルShapeを生成してスライドに追加する |
-| `render_code` | `slide`, `element: Element` | `None` | コードテキストを等幅フォントのテキストボックスとしてスライドに追加する |
+| `render_heading` | `shape`, `element: Element`, `level: int` | `None` | `shape`（プレースホルダーまたはtextbox）のテキストフレームに、`level` に応じたスタイルで見出しテキストを書き込む |
+| `render_paragraph` | `shape`, `element: Element` | `None` | `shape` のテキストフレームに段落テキストを書き込む |
+| `render_list` | `shape`, `element: Element`, `incremental: bool` | `None` | `shape` のテキストフレームにインデント付きの箇条書きリストを書き込む。`incremental=True` の場合はアニメーション逐次表示を設定する |
+| `render_table` | `slide`, `element: Element`, `left: int`, `top: int`, `width: int`, `height: int` | `None` | `slide.shapes.add_table()` で指定座標にテーブルShapeを生成し、`<table>` 要素の内容を書き込む |
+| `render_code` | `shape`, `element: Element` | `None` | `shape` のテキストフレームに等幅フォントでコードテキストを書き込む |
 | `render_notes` | `slide`, `element: Element` | `None` | `element` のテキストをスライドのノートテキストフレームに書き込む |
 
 #### MermaidRenderer
