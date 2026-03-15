@@ -158,3 +158,29 @@ class TestRender:
             output = Path(tmpdir) / "output.pptx"
             render(text, str(output))
             assert output.exists()
+
+    def test_render_incremental_true(self) -> None:
+        """incremental: true を指定したときに例外なくレンダリングが完了する。"""
+        qmd = (
+            "---\ntitle: テスト\nformat:\n  pptx:\n    incremental: true\n---\n"
+            "## スライド\n\n- アイテム1\n- アイテム2\n- アイテム3\n"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "output.pptx"
+            render(qmd, str(output))
+            assert output.exists()
+            assert output.stat().st_size > 0
+
+    def test_render_ignores_nonexistent_yaml_reference_doc(self) -> None:
+        """YAMLのreference-docに存在しないパスを指定した場合、無視してデフォルトで生成する。"""
+        # YAMLに存在しないファイルパスを reference-doc として設定する
+        qmd = (
+            "---\ntitle: テスト\nformat:\n  pptx:\n    reference-doc: 'nonexistent.pptx'\n---\n"
+            "## スライド\n\nコンテンツ\n"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "output.pptx"
+            # 存在しないパスは内部で無効化されデフォルトPresentationを使用する
+            render(qmd, str(output), reference_doc=None)
+            assert output.exists()
+            assert output.stat().st_size > 0

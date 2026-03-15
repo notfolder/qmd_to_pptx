@@ -69,7 +69,7 @@ qmd_to_pptx/（リポジトリルート）
 | `name` | `qmd-to-pptx` |
 | `version` | `0.1.0` |
 | `requires-python` | `>=3.11` |
-| `dependencies` | `markdown`, `pymdown-extensions`, `mermaid-parser-py`, `networkx`, `numpy`, `python-pptx`, `latex2mathml`, `mathml2omml`, `mcp[cli]` |
+| `dependencies` | `markdown`, `pymdown-extensions`, `mermaid-parser-py`, `networkx`, `numpy`, `python-pptx`, `lxml`, `latex2mathml`, `mathml2omml`, `mcp[cli]` |
 
 **[project.scripts] セクション**
 

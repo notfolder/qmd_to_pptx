@@ -9,6 +9,7 @@ dependencies = [
     "networkx",
     "numpy",
     "python-pptx",
+    "lxml",
     "latex2mathml",
     "mathml2omml",
     "mcp[cli]",

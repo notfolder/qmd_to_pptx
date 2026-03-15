@@ -149,7 +149,7 @@ class SlideSplitter:
 
         # slide_levelに基づいてSeparatorTypeを決定する
         if slide_level == 1:
-            # slide-level: 1 の場合、# と ## の両方がコンテンツスライド区切り
+            # slide-level: 1 の場合、# 見出しのみがスライド区切り（正規表現で ## は除外済み）
             if level == 1:
                 sep_type = SeparatorType.HEADING1
             else:
