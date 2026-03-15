@@ -11,6 +11,7 @@ import xml.etree.ElementTree as ET
 
 import networkx as nx
 from mermaid_parser import MermaidParser
+from pptx.enum.text import PP_ALIGN
 from pptx.slide import Slide
 from pptx.util import Emu, Pt
 
@@ -18,6 +19,12 @@ from pptx.util import Emu, Pt
 # ノードのデフォルトサイズ（EMU）
 _NODE_WIDTH_EMU: int = 1200000
 _NODE_HEIGHT_EMU: int = 500000
+
+# クラス図ボックスのサイズ定数（EMU）
+_CLASS_WIDTH_EMU: int = 1700000          # クラスボックスの幅
+_CLASS_HEADER_HEIGHT_EMU: int = 440000   # クラス名ヘッダーの高さ
+_CLASS_ROW_HEIGHT_EMU: int = 280000      # メンバー1行あたりの高さ
+_CLASS_MIN_SECTION_HEIGHT_EMU: int = 320000  # 属性/メソッドセクションの最小高さ
 
 
 class MermaidRenderer:
@@ -56,6 +63,16 @@ class MermaidRenderer:
             描画エリアの高さ（EMU）。
         """
         mermaid_text = "".join(element.itertext()).strip()
+
+        # JSエンジンが対応していないダイアグラムタイプはパーサーを呼ばずフォールバックする
+        # これにより mermaid-parser-py の JS エンジンが stderr に出力するエラーを抑止する
+        _UNSUPPORTED_PREFIXES = (
+            "zenuml",
+        )
+        first_line = mermaid_text.splitlines()[0].strip().lower() if mermaid_text else ""
+        if any(first_line.startswith(p) for p in _UNSUPPORTED_PREFIXES):
+            self._render_fallback(slide, mermaid_text, left, top, width, height)
+            return
 
         try:
             # mermaid-parser-pyでノードとエッジを取得する
@@ -420,7 +437,7 @@ class MermaidRenderer:
         height: int,
     ) -> None:
         """
-        classDiagram を classes 辞書と relations リストから描画する。
+        classDiagram を UMLクラス図形式（ヘッダー・属性・メソッドの3段構成）で描画する。
 
         Parameters
         ----------
@@ -449,8 +466,164 @@ class MermaidRenderer:
             G.add_edge(src, dst)
         pos: dict[str, tuple[float, float]] = nx.spring_layout(G, seed=42)
 
-        node_shapes = self._draw_nodes(slide, nodes, pos, left, top, width, height)
+        # クラス図用レイアウト計算（クラス本体の高さに合わせます）
+        max_class_h = max(
+            (self._class_total_height(classes[nid]) for nid in nodes if nid in classes),
+            default=_NODE_HEIGHT_EMU,
+        )
+        margin_x = _CLASS_WIDTH_EMU // 2
+        margin_y = max_class_h // 2
+        usable_w = max(width - _CLASS_WIDTH_EMU, _CLASS_WIDTH_EMU)
+        usable_h = max(height - max_class_h, max_class_h)
+
+        node_shapes: dict[str, object] = {}
+        for node_id in nodes:
+            if node_id not in pos or node_id not in classes:
+                continue
+            x_norm, y_norm = pos[node_id]
+            x_ratio = (x_norm + 1.0) / 2.0
+            y_ratio = (y_norm + 1.0) / 2.0
+            cx = left + margin_x + int(x_ratio * usable_w)
+            cy = top + margin_y + int(y_ratio * usable_h)
+            anchor = self._draw_class_box(slide, node_id, classes[node_id], cx, cy)
+            node_shapes[node_id] = anchor
+
         self._draw_edges(slide, edges, pos, node_shapes, left, top, width, height)
+
+    def _class_total_height(self, class_data: dict) -> int:
+        """
+        クラスボックスの合計高さ（EMU）を返す。
+
+        Parameters
+        ----------
+        class_data : dict
+            mermaid-parser-pyが返すクラス情報辞書。
+
+        Returns
+        -------
+        int
+            ヘッダー・属性セクション・メソッドセクションの合計高さ（EMU）。
+        """
+        n_members = len(class_data.get("members", []))
+        n_methods = len(class_data.get("methods", []))
+        attrs_h = max(_CLASS_MIN_SECTION_HEIGHT_EMU, n_members * _CLASS_ROW_HEIGHT_EMU)
+        methods_h = max(_CLASS_MIN_SECTION_HEIGHT_EMU, n_methods * _CLASS_ROW_HEIGHT_EMU)
+        return _CLASS_HEADER_HEIGHT_EMU + attrs_h + methods_h
+
+    def _draw_class_box(
+        self,
+        slide: Slide,
+        node_id: str,
+        class_data: dict,
+        cx: int,
+        cy: int,
+    ) -> object:
+        """
+        UMLクラス図の1クラス分のボックスを描画してヘッダーShapeを返す。
+
+        ヘッダー（クラス名）・属性セクション・メソッドセクションの3段構成の矩形を縦に重ねて配置する。
+        コネクターのアンカーとしてヘッダーShapeを返す。
+
+        Parameters
+        ----------
+        slide : Slide
+            python-pptxのSlideオブジェクト。
+        node_id : str
+            クラスID（クラス名）。
+        class_data : dict
+            mermaid-parser-pyが返すクラス情報辞書。
+        cx : int
+            クラスボックス中心のX座標（EMU）。
+        cy : int
+            クラスボックス中心のY座標（EMU）。
+
+        Returns
+        -------
+        object
+            ヘッダー部のShapeオブジェクト（コネクターのアンカーとして使用）。
+        """
+        members = class_data.get("members", [])
+        methods = class_data.get("methods", [])
+        attrs_h = max(_CLASS_MIN_SECTION_HEIGHT_EMU, len(members) * _CLASS_ROW_HEIGHT_EMU)
+        methods_h = max(_CLASS_MIN_SECTION_HEIGHT_EMU, len(methods) * _CLASS_ROW_HEIGHT_EMU)
+        total_h = _CLASS_HEADER_HEIGHT_EMU + attrs_h + methods_h
+
+        box_left = cx - _CLASS_WIDTH_EMU // 2
+        header_top = cy - total_h // 2
+
+        # ---- ヘッダーセクション（クラス名・太字・中山寄せ）----
+        header_shape = slide.shapes.add_shape(
+            1,  # MSO_SHAPE.RECTANGLE
+            Emu(box_left), Emu(header_top),
+            Emu(_CLASS_WIDTH_EMU), Emu(_CLASS_HEADER_HEIGHT_EMU),
+        )
+        tf = header_shape.text_frame
+        tf.word_wrap = True
+        tf.margin_left = Emu(50000)
+        tf.margin_right = Emu(50000)
+        tf.margin_top = Emu(60000)
+        tf.margin_bottom = Emu(60000)
+        p = tf.paragraphs[0]
+        p.alignment = PP_ALIGN.CENTER
+        run = p.add_run()
+        run.text = class_data.get("label", node_id)
+        run.font.bold = True
+        run.font.size = Pt(11)
+
+        # ---- 属性セクション ----
+        attrs_top = header_top + _CLASS_HEADER_HEIGHT_EMU
+        attrs_shape = slide.shapes.add_shape(
+            1,
+            Emu(box_left), Emu(attrs_top),
+            Emu(_CLASS_WIDTH_EMU), Emu(attrs_h),
+        )
+        tf_a = attrs_shape.text_frame
+        tf_a.word_wrap = True
+        tf_a.margin_left = Emu(80000)
+        tf_a.margin_right = Emu(50000)
+        tf_a.margin_top = Emu(50000)
+        tf_a.margin_bottom = Emu(50000)
+        if members:
+            first = True
+            for member in members:
+                # バックスラッシュエスケープを除去する
+                raw = member.get("text", "").lstrip("\\")
+                if first:
+                    p = tf_a.paragraphs[0]
+                    first = False
+                else:
+                    p = tf_a.add_paragraph()
+                run = p.add_run()
+                run.text = raw
+                run.font.size = Pt(9)
+
+        # ---- メソッドセクション ----
+        methods_top = attrs_top + attrs_h
+        methods_shape = slide.shapes.add_shape(
+            1,
+            Emu(box_left), Emu(methods_top),
+            Emu(_CLASS_WIDTH_EMU), Emu(methods_h),
+        )
+        tf_m = methods_shape.text_frame
+        tf_m.word_wrap = True
+        tf_m.margin_left = Emu(80000)
+        tf_m.margin_right = Emu(50000)
+        tf_m.margin_top = Emu(50000)
+        tf_m.margin_bottom = Emu(50000)
+        if methods:
+            first = True
+            for method in methods:
+                raw = method.get("text", "").lstrip("\\")
+                if first:
+                    p = tf_m.paragraphs[0]
+                    first = False
+                else:
+                    p = tf_m.add_paragraph()
+                run = p.add_run()
+                run.text = raw
+                run.font.size = Pt(9)
+
+        return header_shape
 
     def _render_er_diagram(
         self,
