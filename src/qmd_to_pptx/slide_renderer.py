@@ -35,6 +35,19 @@ from .text_renderer import TextRenderer
 from .yaml_parser import YAMLParser
 
 
+class _NodeAdapter:
+    """
+    内部用: DOMNodeInfo と同じインタフェースを持つ軽量アダプター。
+
+    スライドレンダラー内でタイトル・サブタイトル等の
+    仮ノードを生成するために使用する。
+    """
+
+    def __init__(self, node_type: DOMNodeType, element: ET.Element) -> None:
+        self.node_type = node_type
+        self.element = element
+
+
 class SlideRenderer:
     """
     スライドレンダラークラス。
@@ -333,6 +346,7 @@ class SlideRenderer:
         idx: int,
         node: DOMNodeInfo,
         layout_name: str,
+        incremental: bool = False,
     ) -> None:
         """
         slide.placeholders[idx] を取得してコンテンツを書き込む。
@@ -350,6 +364,8 @@ class SlideRenderer:
             処理対象のDOMノード情報。
         layout_name : str
             スライドレイアウト名（ログ用）。
+        incremental : bool
+            リストを逐次表示するかどうか。
         """
         ph = self._get_placeholder(slide, idx)
         if ph is None:
@@ -365,7 +381,7 @@ class SlideRenderer:
         elif ntype == DOMNodeType.PARAGRAPH:
             self._text_renderer.render_paragraph(ph, elem)
         elif ntype in (DOMNodeType.UL, DOMNodeType.OL):
-            self._text_renderer.render_list(ph, elem)
+            self._text_renderer.render_list(ph, elem, incremental=incremental)
         elif ntype == DOMNodeType.CODE:
             self._text_renderer.render_code(ph, elem)
         elif ntype == DOMNodeType.TABLE:
@@ -389,6 +405,7 @@ class SlideRenderer:
         role: str,
         layout_def: LayoutDef,
         node: DOMNodeInfo,
+        incremental: bool = False,
     ) -> None:
         """
         LayoutDef.placeholders を role で検索して座標情報を取得し、
@@ -404,6 +421,8 @@ class SlideRenderer:
             レイアウト定義オブジェクト。
         node : DOMNodeInfo
             処理対象のDOMノード情報。
+        incremental : bool
+            リストを逐次表示するかどうか。
         """
         # roleに対応するPlaceholderInfoを線形探索する
         ph_info: PlaceholderInfo | None = None
@@ -456,7 +475,7 @@ class SlideRenderer:
         elif ntype == DOMNodeType.PARAGRAPH:
             self._text_renderer.render_paragraph(shape, elem)
         elif ntype in (DOMNodeType.UL, DOMNodeType.OL):
-            self._text_renderer.render_list(shape, elem)
+            self._text_renderer.render_list(shape, elem, incremental=incremental)
         elif ntype == DOMNodeType.CODE:
             self._text_renderer.render_code(shape, elem)
 
@@ -520,12 +539,7 @@ class SlideRenderer:
         title_elem = ET.Element("h1")
         title_elem.text = title_text
 
-        class _FakeDOMNode:
-            def __init__(self, node_type: DOMNodeType, element: ET.Element) -> None:
-                self.node_type = node_type
-                self.element = element
-
-        node = _FakeDOMNode(DOMNodeType.H1, title_elem)
+        node = _NodeAdapter(DOMNodeType.H1, title_elem)
 
         if self._resolve_placeholder(slide, idx):
             self._write_via_placeholder(slide, idx, node, "Title Slide")
@@ -567,12 +581,7 @@ class SlideRenderer:
         sub_elem = ET.Element("p")
         sub_elem.text = subtitle_text
 
-        class _FakeDOMNode:
-            def __init__(self, node_type: DOMNodeType, element: ET.Element) -> None:
-                self.node_type = node_type
-                self.element = element
-
-        node = _FakeDOMNode(DOMNodeType.PARAGRAPH, sub_elem)
+        node = _NodeAdapter(DOMNodeType.PARAGRAPH, sub_elem)
 
         if self._resolve_placeholder(slide, idx):
             ph = self._get_placeholder(slide, idx)
@@ -669,12 +678,6 @@ class SlideRenderer:
         title_elem = ET.Element("h2")
         title_elem.text = title
 
-        class _FakeDOMNode:
-            def __init__(self, node_type: DOMNodeType, element: ET.Element) -> None:
-                self.node_type = node_type
-                self.element = element
-
-        node = _FakeDOMNode(DOMNodeType.H2, title_elem)
         layout_def = self._layout_json.layouts.get(layout_name, LayoutDef())
 
         # タイトルプレースホルダー（idx=0）への書き込みを試みる
@@ -800,9 +803,13 @@ class SlideRenderer:
         # body プレースホルダー（idx=1）の存在を確認する
         body_idx = 1
         if self._resolve_placeholder(slide, body_idx):
-            self._write_via_placeholder(slide, body_idx, node, "")
+            self._write_via_placeholder(
+                slide, body_idx, node, "", incremental=incremental
+            )
         else:
-            self._write_via_textbox(slide, "body", layout_def, node)
+            self._write_via_textbox(
+                slide, "body", layout_def, node, incremental=incremental
+            )
 
     def _render_columns(
         self,
