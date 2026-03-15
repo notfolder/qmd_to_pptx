@@ -764,7 +764,11 @@ class SlideRenderer:
                 continue
 
             # H1/H2はタイトルとして処理済みのためスキップする（bodyには含めない）
-            if ntype in (DOMNodeType.H1, DOMNodeType.H2):
+            # ただし slide-level: 1 の場合、H2は本文見出しとして処理するため
+            # スキップせずにbodyとして描画する
+            if ntype == DOMNodeType.H1:
+                continue
+            if ntype == DOMNodeType.H2 and metadata.slide_level != 1:
                 continue
 
             # その他のノードをbodyとして処理する

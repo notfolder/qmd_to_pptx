@@ -264,7 +264,16 @@ classDiagram
 
 | メソッド | 引数 | 戻り値 | 処理内容 |
 |---|---|---|---|
-| `normalize` | `text: str` | `str` | YAMLフロントマター補完・Mermaid記法統一・コードブロック記法統一を順に適用し、正規化済みQMDテキストを返す |
+| `normalize` | `text: str` | `str` | YAMLフロントマター補完・Mermaid記法統一・コードブロック記法統一・フェンスドdiv変換を順に適用し、正規化済みQMDテキストを返す |
+
+`normalize` が行う4つの処理の詳細：
+
+| 処理名 | 検出条件 | 正規化内容 |
+|---|---|---|
+| YAMLフロントマター補完 | テキスト先頭が `---\n` で始まらない | 空の `title`/`author`/`date` フィールドを持つ最小限のYAMLフロントマターを付与する |
+| Mermaid記法の統一 | ` ```{mermaid} ` 行を検出 | ` ```mermaid ` 形式に置換する |
+| コードブロック記法の統一 | ` ```{言語名} ` または ` ```{.言語名} ` 行を検出 | ` ```言語名 ` 形式に置換する |
+| フェンスドdiv変換 | `::: {.class}` … `:::` ブロックを検出 | `<div class="class" markdown="1">` … `</div>` へ変換する。ネストしたdivも再帰的に処理する。コードブロック（` ``` `）内は変換対象外 |
 
 #### YAMLParser
 
@@ -282,7 +291,7 @@ classDiagram
 
 | メソッド | 引数 | 戻り値 | 処理内容 |
 |---|---|---|---|
-| `parse` | `text: str` | `Element` | `pymdownx.superfences`・`pymdownx.arithmatex`・`tables`・`fenced_code` の各extensionを適用し、MarkdownをHTMLに変換してDOMツリーのルート `Element` を返す |
+| `parse` | `text: str` | `Element` | `pymdownx.superfences`・`pymdownx.arithmatex`・`tables`・`fenced_code`・`md_in_html` の各extensionを適用し、MarkdownをHTMLに変換してDOMツリーのルート `Element` を返す。`md_in_html` 拡張により、`<div markdown="1">` 内のMarkdownも処理される |
 
 #### DOMTraverser
 
@@ -300,6 +309,14 @@ classDiagram
 | `_resolve_placeholder` | `slide`, `idx: int` | `bool` | `slide.placeholders` に指定 `idx` が存在する場合は `True` を返す |
 | `_write_via_placeholder` | `slide`, `idx: int`, `node: DOMNodeInfo`, `layout_name: str`, `incremental: bool` | `None` | `slide.placeholders[idx]` を取得し、テキスト系ノードはそのshapeを `TextRenderer` の対応メソッドに渡してコンテンツを書き込む。テーブルノードはプレースホルダーの座標を取得して `TextRenderer.render_table()` を呼び出す。`incremental` はリスト描画時に `render_list` へ渡す（パターンB・Dで使用） |
 | `_write_via_textbox` | `slide`, `role: str`, `layout_def: LayoutDef`, `node: DOMNodeInfo`, `incremental: bool` | `None` | `LayoutDef.placeholders` を `role` で線形探索して座標情報を取得し、テキスト系ノードは `add_textbox()` で作成したshapeを `TextRenderer` の対応メソッドに渡して書き込む。テーブルノードは `TextRenderer.render_table()` に座標を渡す。`incremental` はリスト描画時に `render_list` へ渡す（パターンA・C・Dで使用） |
+
+**`_render_nodes` のノード処理方針：**
+
+| ノード種別 | `slide_level: 2` | `slide_level: 1` |
+|---|---|---|
+| H1 | スキップ（タイトルとして処理済み） | スキップ（タイトルとして処理済み） |
+| H2 | スキップ（タイトルとして処理済み） | 本文コンテンツとして `_render_body_node` へ渡す |
+| その他 | `_render_body_node` へ渡す | `_render_body_node` へ渡す |
 
 **プレースホルダーパターン適用方針：**
 

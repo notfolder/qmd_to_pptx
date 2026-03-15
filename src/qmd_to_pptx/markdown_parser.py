@@ -71,6 +71,7 @@ class MarkdownParser:
         "pymdownx.arithmatex",
         "tables",
         "fenced_code",
+        "md_in_html",
     ]
 
     def __init__(self) -> None:
