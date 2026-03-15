@@ -405,3 +405,58 @@ sequenceDiagram
 
     スライドレンダラー -->> 呼び出し元: PPTXファイルを出力
 ```
+
+---
+
+## 7. MCPサーバー
+
+### 7.1 概要
+
+`mcp_server.py` は、本ライブラリをMCP（Model Context Protocol）サーバーとして公開するエントリーポイントである。AIエージェント（Claude Desktopなど）がツール呼び出しによってMarkdown/QMDテキストからPPTXファイルを生成できるようにする。
+
+使用ライブラリは `mcp[cli]` パッケージの `FastMCP` クラスである。
+
+### 7.2 公開ツール定義
+
+サーバーが公開するツールは以下の1つである。
+
+**ツール名**: `markdown_to_pptx`
+
+| 引数名 | 型 | 必須 | 内容 |
+|---|---|---|---|
+| content | 文字列 | 必須 | QMDまたはMarkdownのテキスト文字列（ファイルパスではなくテキスト内容そのもの） |
+| output | 文字列 | 必須 | 出力先PPTXファイルパス（サーバー側ファイルシステム上のパス） |
+| reference_doc | 文字列またはNone | 省略可 | ベースとなるPPTXテンプレートのパス。省略時はデフォルトレイアウトを使用する |
+
+ツール内部では `qmd_to_pptx.render(content, output, reference_doc)` を呼び出し、結果のPPTXをサーバー側ファイルシステムに書き出す。戻り値は処理結果を示す文字列メッセージである。
+
+### 7.3 トランスポート仕様
+
+起動時の引数でトランスポート方式を切り替える。
+
+| 起動引数 | 値 | デフォルト | 内容 |
+|---|---|---|---|
+| `--transport` | `stdio` / `http` | `stdio` | トランスポート方式を指定する |
+| `--host` | 文字列 | `0.0.0.0` | HTTP方式時のバインドアドレス |
+| `--port` | 整数 | `8000` | HTTP方式時のポート番号 |
+
+`stdio` を選択した場合、MCPプロトコルのJSON-RPCメッセージは標準入出力（stdin/stdout）を介して送受信される。`http` を選択した場合はStreamable HTTPトランスポートを使用する。
+
+### 7.4 stdioトランスポートの制約
+
+`stdio` トランスポートでは、標準出力（stdout）はMCPプロトコルのJSON-RPCメッセージ専用チャネルとなる。そのため以下の制約がある。
+
+- アプリケーションログ・デバッグ出力は標準エラー出力（stderr）へのみ書き出す
+- `print()` 関数による標準出力への書き出しは行わない
+- ログ出力には `logging` モジュールを使用し、ハンドラーのストリームを `sys.stderr` に設定する
+
+### 7.5 Claude Desktop登録設定例
+
+Claude Desktopに `stdio` モードで登録する際の `claude_desktop_config.json` の設定項目を示す。
+
+| 設定項目 | 内容 |
+|---|---|
+| command | 仮想環境内Pythonインタープリターへの絶対パス |
+| args[0] | `mcp_server.py` への絶対パス |
+| args[1] | `--transport` |
+| args[2] | `stdio` |
