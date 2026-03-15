@@ -167,8 +167,10 @@ class TestFlowchartRenderer:
             edges=[{"start": "A", "end": "B", "stroke": "normal", "type": "arrow_point", "text": "条件"}],
         )
         self.renderer.render(slide, graph_data, "", Emu(0), Emu(0), Emu(9000000), Emu(5000000))
-        # 2ノード + 1コネクター + 1テキストボックス以上のShapeが追加される
-        assert len(slide.shapes) >= initial + 4
+        # 2ノード + (コネクターとテキストボックスのグループ or 独立Shape) が追加される
+        # グループ化成功時: 2ノード + 1グループ = 3追加
+        # グループ化失敗時（フォールバック）: 2ノード + 1コネクター + 1テキストボックス = 4追加
+        assert len(slide.shapes) >= initial + 3
 
     def test_render_fallback_on_empty_vertices(self) -> None:
         """vertices が空の場合はフォールバック（テキストボックス）が追加される。"""

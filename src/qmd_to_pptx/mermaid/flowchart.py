@@ -102,7 +102,7 @@ class FlowchartRenderer(BaseDiagramRenderer):
 
         nodes = list(vertices.keys())
 
-        # NetworkXグラフを構築してspring_layoutで座標計算する
+        # NetworkXグラフを構築してレイアウトを計算する
         G = nx.DiGraph()
         G.add_nodes_from(nodes)
         for edge in raw_edges:
@@ -112,7 +112,11 @@ class FlowchartRenderer(BaseDiagramRenderer):
                 if src is not None and dst is not None:
                     G.add_edge(str(src), str(dst))
 
-        pos: dict[str, tuple[float, float]] = nx.spring_layout(G, seed=42)
+        # kamada_kawai_layoutでノード配置の重なりを軽減する（失敗時はspring_layoutにフォールバック）
+        try:
+            pos: dict[str, tuple[float, float]] = nx.kamada_kawai_layout(G)
+        except Exception:
+            pos = nx.spring_layout(G, seed=42, k=2.0)
 
         # 頂点をシェイプ種別に応じて描画する
         node_shapes = self._draw_nodes_flowchart(
@@ -188,9 +192,15 @@ class FlowchartRenderer(BaseDiagramRenderer):
             if node_type == "lean_left":
                 self._apply_flip(shape, flip_h=True, flip_v=False)
 
-            # inv_trapezoid（逆台形）は垂直フリップを適用する
+            # inv_trapezoid（逆台形）はprstGeomをinvertedTrapezoidに書き換える
+            # flipVを使うとテキストフレームも反転するため、XMLで輪郭の形状のみ変更する
             if node_type == "inv_trapezoid":
-                self._apply_flip(shape, flip_h=False, flip_v=True)
+                sp_el = shape._element
+                spPr = sp_el.find(qn("p:spPr"))
+                if spPr is not None:
+                    prstGeom = spPr.find(qn("a:prstGeom"))
+                    if prstGeom is not None:
+                        prstGeom.set("prst", "invertedTrapezoid")
 
             # 表示ラベルを設定する（text フィールドを優先、なければノードID）
             label = (
@@ -337,7 +347,7 @@ class FlowchartRenderer(BaseDiagramRenderer):
                 tail.set("w", "med")
                 tail.set("len", "med")
 
-            # ラベルがある場合はコネクター中点にテキストボックスを追加する
+            # ラベルがある場合はコネクター中点にテキストボックスを追加しグループ化する
             if edge_label:
                 cx_pos = (sx + dx) // 2 - _LABEL_WIDTH_EMU // 2
                 cy_pos = (sy + dy) // 2 - _LABEL_HEIGHT_EMU // 2
@@ -351,3 +361,8 @@ class FlowchartRenderer(BaseDiagramRenderer):
                 run = para.add_run()
                 run.text = edge_label
                 run.font.size = Pt(10)
+                # コネクターとラベルをグループ化して位置関係を保つ
+                try:
+                    slide.shapes.add_group_shape([connector, tb])
+                except Exception:
+                    pass  # グループ化失敗時は独立Shapeのまま維持する

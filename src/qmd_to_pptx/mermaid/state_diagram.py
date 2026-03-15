@@ -59,7 +59,11 @@ class StateDiagramRenderer(BaseDiagramRenderer):
         G.add_nodes_from(nodes)
         for src, dst in edges:
             G.add_edge(src, dst)
-        pos: dict[str, tuple[float, float]] = nx.spring_layout(G, seed=42)
+        # kamada_kawai_layoutでノード配置の重なりを軽減する（失敗時はspring_layoutにフォールバック）
+        try:
+            pos: dict[str, tuple[float, float]] = nx.kamada_kawai_layout(G)
+        except Exception:
+            pos = nx.spring_layout(G, seed=42, k=2.0)
 
         node_shapes = self._draw_nodes(
             slide, nodes, pos, left, top, width, height, label_map=label_map

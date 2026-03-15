@@ -6,7 +6,7 @@ classDiagram を UMLクラス図形式（ヘッダー・属性・メソッドの
 
 from __future__ import annotations
 
-import networkx as nx
+import math
 from lxml import etree as lxml_etree
 from pptx.enum.text import PP_ALIGN
 from pptx.oxml.ns import qn
@@ -64,17 +64,20 @@ class ClassDiagramRenderer(BaseDiagramRenderer):
             return
 
         nodes = list(classes.keys())
-        edges = [
-            (r["id1"], r["id2"])
-            for r in relations
-            if "id1" in r and "id2" in r
-        ]
 
-        G = nx.DiGraph()
-        G.add_nodes_from(nodes)
-        for src, dst in edges:
-            G.add_edge(src, dst)
-        pos: dict[str, tuple[float, float]] = nx.spring_layout(G, seed=42)
+        # 格子配置でノードを均等に並べる（spring_layoutによる重なりを防ぐ）
+        n = len(nodes)
+        n_cols = max(1, math.ceil(math.sqrt(n)))
+        n_rows = math.ceil(n / n_cols)
+
+        # _draw_edges_classが参照するposを格子の正規化座標で構築する
+        pos: dict[str, tuple[float, float]] = {}
+        for i, node_id in enumerate(nodes):
+            col = i % n_cols
+            row = i // n_cols
+            x_norm = -1.0 + 2.0 * col / max(n_cols - 1, 1) if n_cols > 1 else 0.0
+            y_norm = -1.0 + 2.0 * row / max(n_rows - 1, 1) if n_rows > 1 else 0.0
+            pos[node_id] = (x_norm, y_norm)
 
         # クラス図用レイアウト計算（クラス本体の高さに合わせる）
         max_class_h = max(
