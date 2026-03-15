@@ -209,9 +209,6 @@ class MermaidRenderer:
         dict[str, object]
             ノードIDをキー、Shapeオブジェクトを値とする辞書。
         """
-        from pptx.enum.shapes import MSO_SHAPE_TYPE
-        from pptx.util import Emu
-
         node_shapes: dict[str, object] = {}
         for node_id in nodes:
             if node_id not in pos:
@@ -222,8 +219,6 @@ class MermaidRenderer:
             shape_top = cy - _NODE_HEIGHT_EMU // 2
 
             # add_shape で矩形を追加する
-            from pptx.enum.shapes import MSO_SHAPE_TYPE
-            from pptx.util import Emu
             shape = slide.shapes.add_shape(
                 1,  # MSO_SHAPE_TYPE.RECTANGLE
                 Emu(shape_left),
@@ -272,8 +267,6 @@ class MermaidRenderer:
         height : int
             描画エリアの高さ（EMU）。
         """
-        from pptx.util import Emu
-
         for src, dst in edges:
             if src not in pos or dst not in pos:
                 continue
@@ -319,7 +312,6 @@ class MermaidRenderer:
         height : int
             高さ（EMU）。
         """
-        from pptx.util import Emu
         shape = slide.shapes.add_textbox(
             Emu(left), Emu(top), Emu(width), Emu(height)
         )

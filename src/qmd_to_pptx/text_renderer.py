@@ -269,7 +269,7 @@ class TextRenderer:
                 row_data = [
                     "".join(cell.itertext()).strip()
                     for cell in section
-                    if section.tag in ("th", "td")
+                    if cell.tag in ("th", "td")
                 ]
                 rows.append(row_data)
         return rows

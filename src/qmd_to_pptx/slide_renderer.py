@@ -481,13 +481,12 @@ class SlideRenderer:
         # タイトルを書き込む（idx=0）
         self._write_title_to_slide(slide, metadata.title, 0, "title", layout_def)
 
-        # サブタイトルを書き込む（idx=1、author と date を組み合わせる）
+        # サブタイトルを書き込む（idx=1、author と date を組み合わせる。空文字でも常に処理する）
         subtitle_parts = [metadata.author, metadata.date]
         subtitle_text = "\n".join(p for p in subtitle_parts if p)
-        if subtitle_text or True:  # 空文字でも常に処理する
-            self._write_subtitle_to_slide(
-                slide, subtitle_text, 1, "subtitle", layout_def
-            )
+        self._write_subtitle_to_slide(
+            slide, subtitle_text, 1, "subtitle", layout_def
+        )
 
     def _write_title_to_slide(
         self,
