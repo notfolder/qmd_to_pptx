@@ -232,7 +232,7 @@ classDiagram
     GPS .. Fuel : Link_Dashed（点線）
 ```
 
-## 5. 状態図（State Diagram）
+## 5a. 状態図（State Diagram） - 通常状態・開始/終了・遷移ラベルのデモ
 
 ```mermaid
 stateDiagram-v2
@@ -242,6 +242,41 @@ stateDiagram-v2
     処理中 --> エラー : 失敗
     エラー --> 待機中 : リトライ
     完了 --> [*]
+```
+
+## 5b. 状態図 - 並行（並列）・ノート・LR方向
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> Active
+    state Active {
+        [*] --> NumLockOff
+        NumLockOff --> NumLockOn : NumLock押す
+        NumLockOn --> NumLockOff : NumLock押す
+        --
+        [*] --> CapsLockOff
+        CapsLockOff --> CapsLockOn : CapsLock押す
+        CapsLockOn --> CapsLockOff : CapsLock押す
+    }
+    note right of Active : キーボードの並行状態
+    Active --> [*]
+```
+
+## 5c. 状態図 - 分岐（choice）・複合状態
+
+```mermaid
+stateDiagram-v2
+    [*] --> Check
+    Check --> Fast : speed > 80
+    Check --> Slow : speed <=80
+    state VehicleState {
+        Idle --> Moving : start
+        Moving --> Idle : stop
+    }
+    Fast --> VehicleState
+    Slow --> VehicleState
+    VehicleState --> [*]
 ```
 
 ## 6. ER図（Entity Relationship Diagram）

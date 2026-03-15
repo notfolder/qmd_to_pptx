@@ -1,6 +1,6 @@
 # qmd_to_pptx
 
-QMD（Quarto Markdown）またはMarkdownファイルをPowerPoint（PPTX）に変換するPythonライブラリです。
+QMD（Quarto Markdown）またはMarkdownファイルを**編集可能な**PowerPoint（PPTX）に変換するPythonライブラリです。
 Pythonライブラリとして直接利用するほか、MCPサーバーとして起動してAIエージェントから呼び出すことも可能です。
 
 ---

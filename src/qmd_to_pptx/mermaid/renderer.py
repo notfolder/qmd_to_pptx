@@ -6,6 +6,7 @@ MermaidRendererファサードモジュール。
 
 from __future__ import annotations
 
+import re
 import xml.etree.ElementTree as ET
 
 from mermaid_parser import MermaidParser
@@ -113,6 +114,15 @@ class MermaidRenderer:
             self._sequence.render(slide, graph_data, left, top, width, height)
             return
         if graph_type == "stateDiagram":
+            # stateDiagram-v2 の direction キーワードを解析して graph_data に注入する
+            # （graph_data root には direction フィールドが含まれないため、
+            #   Mermaidテキストから直接抽出する）
+            _dir_m = re.search(
+                r'^\s*direction\s+(TD|TB|LR|RL|BT)\b',
+                mermaid_text,
+                re.IGNORECASE | re.MULTILINE,
+            )
+            graph_data["_direction"] = _dir_m.group(1).upper() if _dir_m else "TB"
             self._state_diagram.render(slide, graph_data, left, top, width, height)
             return
         if graph_type == "class":
