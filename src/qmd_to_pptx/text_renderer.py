@@ -325,6 +325,11 @@ class TextRenderer:
         element : ET.Element
             コード要素（code）。
         """
+        from lxml import etree as lxml_etree
+
+        # DrawingML の名前空間
+        _A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+
         text = "".join(element.itertext())
         tf = shape.text_frame
         tf.clear()
@@ -334,6 +339,19 @@ class TextRenderer:
         run.text = text
         run.font.name = self._MONOSPACE_FONT
         run.font.size = Pt(14)
+
+        # コードブロックはbulletスタイルを無効化する（コンテンツプレースホルダーの
+        # デフォルトbulletスタイルが引き継がれてしまうのを防ぐ）
+        p_elem = para._p
+        pPr = p_elem.find(f"{{{_A_NS}}}pPr")
+        if pPr is None:
+            pPr = lxml_etree.Element(f"{{{_A_NS}}}pPr")
+            p_elem.insert(0, pPr)
+        for tag_name in ("buNone", "buChar", "buAutoNum", "buClr", "buSzPct", "buFont"):
+            old = pPr.find(f"{{{_A_NS}}}{tag_name}")
+            if old is not None:
+                pPr.remove(old)
+        lxml_etree.SubElement(pPr, f"{{{_A_NS}}}buNone")
 
     def render_notes(
         self,

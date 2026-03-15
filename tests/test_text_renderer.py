@@ -117,6 +117,23 @@ class TestTextRenderer:
         assert runs[0].text == "print('hello')"
         assert runs[0].font.name == "Courier New"
 
+    def test_render_code_no_bullet(self) -> None:
+        """コードブロックの段落pPrにbuNoneが設定されていてbulletが無効化されている。"""
+        from lxml import etree
+
+        _A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+        slide, _ = _make_slide()
+        shape = _make_textbox(slide)
+        elem = ET.Element("code")
+        elem.text = "x = 1"
+        self.renderer.render_code(shape, elem)
+        para = shape.text_frame.paragraphs[0]
+        p_elem = para._p
+        pPr = p_elem.find(f"{{{_A_NS}}}pPr")
+        assert pPr is not None, "pPr が段落に存在しない"
+        bu_none = pPr.find(f"{{{_A_NS}}}buNone")
+        assert bu_none is not None, "buNone が pPr に設定されていない"
+
     # --- render_table のテスト ---
 
     def test_render_table(self) -> None:

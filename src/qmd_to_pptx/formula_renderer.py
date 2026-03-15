@@ -135,6 +135,63 @@ class FormulaRenderer:
             run.text = latex_text
             run.font.size = Pt(14)
 
+    def render_block_into_frame(
+        self,
+        shape: object,
+        element: ET.Element,
+    ) -> None:
+        """
+        elementからLaTeXテキストを取り出し、OMMLに変換して既存shapeの
+        テキストフレームに段落として追記する。
+
+        ブロック数式を前後のテキストと同じテキストフレーム内に配置することで、
+        独立したtextboxが前テキストに重なるレイアウト問題を回避する。
+
+        Parameters
+        ----------
+        shape : object
+            python-pptxのShapeオブジェクト（既存のコンテンツプレースホルダー）。
+        element : ET.Element
+            ブロック数式要素（div class="arithmatex"）。
+        """
+        latex_text = self._extract_latex(element)
+        if not latex_text:
+            return
+
+        tf = shape.text_frame
+        tf.word_wrap = True
+
+        # 既存テキストがある場合は空行スペーサーを挿入してから数式段落を追加する
+        existing_text = "".join(
+            run.text for para in tf.paragraphs for run in para.runs
+        ).strip()
+        if existing_text:
+            tf.add_paragraph()  # 空行スペーサー
+            para = tf.add_paragraph()
+        else:
+            para = tf.paragraphs[0]
+
+        p_elem = para._p
+        A14_NS = "http://schemas.microsoft.com/office/drawing/2010/main"
+        OMML_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"
+
+        try:
+            omml_bytes = self._latex_to_omml(latex_text)
+            omml_elem = etree.fromstring(omml_bytes)
+
+            # a14:m 要素でOMMLをラップする（PowerPointのブロック数式構造）
+            a14_m = etree.Element(
+                f"{{{A14_NS}}}m",
+                nsmap={"a14": A14_NS, "m": OMML_NS},
+            )
+            a14_m.append(omml_elem)
+            p_elem.append(a14_m)
+        except Exception:
+            # 変換失敗時はLaTeXテキストをそのまま段落に書き込む
+            run = para.add_run()
+            run.text = latex_text
+            run.font.size = Pt(14)
+
     def _extract_latex(self, element: ET.Element) -> str:
         """
         arithmatex要素からLaTeXテキストを取り出す。

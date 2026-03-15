@@ -455,9 +455,8 @@ class SlideRenderer:
                 slide, elem, ph.left, ph.top, ph.width, ph.height
             )
         elif ntype in (DOMNodeType.FORMULA_BLOCK,):
-            self._formula_renderer.render_block(
-                slide, elem, ph.left, ph.top, ph.width, ph.height
-            )
+            # 既存textframeに追記することで前テキストとの重なりを回避する
+            self._formula_renderer.render_block_into_frame(ph, elem)
 
     def _write_via_textbox(
         self,

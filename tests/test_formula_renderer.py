@@ -109,3 +109,52 @@ class TestFormulaRenderer:
         )
         # 空テキストの場合は何も追加されない
         assert len(slide.shapes) == initial_shapes
+
+    # --- render_block_into_frame のテスト ---
+
+    def test_render_block_into_frame_empty_frame(self) -> None:
+        """既存テキストなしの場合、paragraphs[0]に数式を追記する。"""
+        from pptx import Presentation
+        from pptx.util import Emu
+
+        prs = Presentation()
+        slide = prs.slides.add_slide(prs.slide_layouts[5])
+        shape = slide.shapes.add_textbox(Emu(100000), Emu(100000), Emu(5000000), Emu(2000000))
+        elem = _make_block_element("E=mc^2")
+        initial_para_count = len(shape.text_frame.paragraphs)
+        # 例外なく完了することを確認
+        self.renderer.render_block_into_frame(shape, elem)
+        # 段落数が増えていないこと（paragraphs[0]を使用するため）
+        assert len(shape.text_frame.paragraphs) == initial_para_count
+
+    def test_render_block_into_frame_with_existing_text(self) -> None:
+        """既存テキストがある場合、空行スペーサー＋数式段落が2つ追加される。"""
+        from pptx import Presentation
+        from pptx.util import Emu
+
+        prs = Presentation()
+        slide = prs.slides.add_slide(prs.slide_layouts[5])
+        shape = slide.shapes.add_textbox(Emu(100000), Emu(100000), Emu(5000000), Emu(2000000))
+        # 先にテキストを書き込む
+        tf = shape.text_frame
+        tf.paragraphs[0].add_run().text = "前テキスト"
+        before_count = len(tf.paragraphs)
+        elem = _make_block_element("E=mc^2")
+        self.renderer.render_block_into_frame(shape, elem)
+        # 空行スペーサー + 数式段落 = 2段落追加されること
+        assert len(tf.paragraphs) == before_count + 2
+
+    def test_render_block_into_frame_empty_latex_is_skipped(self) -> None:
+        """LaTeXテキストが空の場合は段落を追加しない。"""
+        from pptx import Presentation
+        from pptx.util import Emu
+
+        prs = Presentation()
+        slide = prs.slides.add_slide(prs.slide_layouts[5])
+        shape = slide.shapes.add_textbox(Emu(100000), Emu(100000), Emu(5000000), Emu(2000000))
+        elem = ET.Element("div")
+        elem.set("class", "arithmatex")
+        elem.text = ""
+        before_count = len(shape.text_frame.paragraphs)
+        self.renderer.render_block_into_frame(shape, elem)
+        assert len(shape.text_frame.paragraphs) == before_count
