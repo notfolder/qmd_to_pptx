@@ -18,10 +18,11 @@ from pptx.util import Emu, Pt
 from .base import BaseDiagramRenderer
 
 # ---- ノードサイズ定義（深さ別、EMU）----
+# 深い階層ほど小さくしてキャンバス内に収まりやすくする
 _NODE_SIZES: list[tuple[int, int]] = [
-    (1_600_000, 650_000),   # depth 0: ルートノード
-    (1_300_000, 520_000),   # depth 1: L1ノード
-    (1_000_000, 400_000),   # depth 2以降: 末端ノード
+    (1_200_000, 480_000),   # depth 0: ルートノード
+    (900_000, 370_000),     # depth 1: L1ノード
+    (680_000, 280_000),     # depth 2以降: 末端ノード
 ]
 
 # ---- ブランチカラーパレット（L1ブランチ用、最大8色） ----
@@ -103,44 +104,54 @@ class MindmapRenderer(BaseDiagramRenderer):
         max_depth = max(self._node_depth(n) for n in node_info.values())
         max_depth = max(max_depth, 1)  # ゼロ除算防止
 
-        # 放射状座標とブランチカラーを計算する
-        pos: dict[str, tuple[float, float]] = {root_id: (0.0, 0.0)}
+        # キャンバス中心（EMU）を計算する
+        cx_emu = left + width // 2
+        cy_emu = top + height // 2
+
+        # 外側楕円の半径：末端ノードが枠内に収まるようマージンを引く
+        # アスペクト比に合わせてX・Y半径を独立に設定することで歪みを防ぐ
+        outer_w, outer_h = _NODE_SIZES[2]
+        padding_x = outer_w // 2 + 80_000
+        padding_y = outer_h // 2 + 60_000
+        rx_outer = max(1, width // 2 - padding_x)
+        ry_outer = max(1, height // 2 - padding_y)
+
+        # 放射状座標（EMU）とブランチカラーを計算する
+        emu_pos: dict[str, tuple[int, int]] = {root_id: (cx_emu, cy_emu)}
         branch_color_map: dict[str, tuple[int, int, int]] = {
             root_id: _ROOT_FILL_RGB
         }
-        self._assign_radial_positions(
-            root, 0.0, 2 * math.pi, 1, max_depth, pos, branch_color_map
+        self._assign_radial_emu_positions(
+            root, 0.0, 2 * math.pi, 1, max_depth,
+            emu_pos, branch_color_map,
+            cx_emu, cy_emu, rx_outer, ry_outer,
         )
 
         # 親子エッジを収集する
         edges: list[tuple[str, str]] = []
         self._collect_edges(root, edges)
 
-        # ノードShapeを描画する
+        # ノードShapeを描画する（EMU中心座標を直接渡す）
         node_shapes: dict[str, object] = {}
         for node_id, node in node_info.items():
-            if node_id not in pos:
+            if node_id not in emu_pos:
                 continue
-            x_norm, y_norm = pos[node_id]
+            nx, ny = emu_pos[node_id]
             depth = self._node_depth(node)
             fill_rgb = branch_color_map.get(node_id, (200, 200, 200))
-            shape = self._draw_mindmap_node(
-                slide, node, x_norm, y_norm, depth, fill_rgb,
-                left, top, width, height,
-            )
+            shape = self._draw_mindmap_node(slide, node, nx, ny, depth, fill_rgb)
             node_shapes[node_id] = shape
 
         # 曲線コネクターを描画する
         for src_id, dst_id in edges:
-            if src_id not in pos or dst_id not in pos:
+            if src_id not in emu_pos or dst_id not in emu_pos:
                 continue
             color = branch_color_map.get(dst_id, (150, 150, 150))
             self._draw_curved_mindmap_edge(
                 slide,
-                pos[src_id], pos[dst_id],
+                emu_pos[src_id], emu_pos[dst_id],
                 node_shapes.get(src_id), node_shapes.get(dst_id),
                 color,
-                left, top, width, height,
             )
 
     # ------------------------------------------------------------------
@@ -224,23 +235,28 @@ class MindmapRenderer(BaseDiagramRenderer):
                 edges.append((node_id, child_id))
             self._collect_edges(child, edges)
 
-    def _assign_radial_positions(
+    def _assign_radial_emu_positions(
         self,
         node: dict,
         angle_start: float,
         angle_end: float,
         depth: int,
         max_depth: int,
-        pos: dict[str, tuple[float, float]],
+        emu_pos: dict[str, tuple[int, int]],
         branch_color_map: dict[str, tuple[int, int, int]],
+        cx: int,
+        cy: int,
+        rx_outer: int,
+        ry_outer: int,
         parent_color: tuple[int, int, int] | None = None,
         l1_index: int = 0,
     ) -> int:
         """
-        ノードの子を放射状に配置し、pos と branch_color_map を更新する。
+        ノードの子を楕円放射状に配置し、emu_pos と branch_color_map を更新する。
 
-        現ノードの葉ノード数を基準に各子の角度セクターを比例配分する。
-        これにより全子の角度セクターが合計してangle_start〜angle_endに収まる。
+        キャンバスの X 半径 rx_outer と Y 半径 ry_outer を独立に管理することで
+        アスペクト比の歪みを防ぎ、全方向に均等なノード間隔を実現する。
+        各子の角度セクターは配下葉ノード数に比例して配分する。
 
         Parameters
         ----------
@@ -252,10 +268,14 @@ class MindmapRenderer(BaseDiagramRenderer):
             配置対象の子ノードの深さ（1=L1, 2=L2, ...）。
         max_depth : int
             ツリー全体の最大深さ（半径計算に使用）。
-        pos : dict
-            ノードID→正規化座標のマップ（更新対象）。
+        emu_pos : dict
+            ノードID→EMU中心座標のマップ（更新対象）。
         branch_color_map : dict
             ノードID→RGB色のマップ（更新対象）。
+        cx, cy : int
+            キャンバス中心のEMU座標。
+        rx_outer, ry_outer : int
+            外側楕円のX・Y半径（EMU）。アスペクト比に合わせて個別設定する。
         parent_color : tuple[int, int, int] | None
             親ノードの色（L2以降の色継承に使用）。
         l1_index : int
@@ -273,8 +293,10 @@ class MindmapRenderer(BaseDiagramRenderer):
         # 現ノードの全葉ノード数（角度比率の分母として使用）
         node_leaves = self._count_leaves(node)
 
-        # 各子の深さに応じた半径（0.0〜0.85 の範囲に収める）
-        r = (depth / max_depth) * 0.85
+        # この深さでのX・Y楕円半径（外辺半径の92%まで使用）
+        r_frac = (depth / max_depth) * 0.92
+        rx = int(r_frac * rx_outer)
+        ry = int(r_frac * ry_outer)
 
         current_angle = angle_start
         next_l1_index = l1_index
@@ -287,10 +309,10 @@ class MindmapRenderer(BaseDiagramRenderer):
             angle_span = (child_leaves / node_leaves) * (angle_end - angle_start)
             angle_mid = current_angle + angle_span / 2.0
 
-            # 極座標を正規化デカルト座標に変換する
-            x_norm = r * math.cos(angle_mid)
-            y_norm = r * math.sin(angle_mid)
-            pos[child_id] = (x_norm, y_norm)
+            # 楕円極座標をEMU座標に変換する（X・Yで独立した半径を使用）
+            x_emu = cx + int(rx * math.cos(angle_mid))
+            y_emu = cy + int(ry * math.sin(angle_mid))
+            emu_pos[child_id] = (x_emu, y_emu)
 
             # ブランチカラーを決定する
             if depth == 1:
@@ -310,11 +332,12 @@ class MindmapRenderer(BaseDiagramRenderer):
             branch_color_map[child_id] = color
 
             # 子サブツリーを再帰的に配置する
-            next_l1_index = self._assign_radial_positions(
+            next_l1_index = self._assign_radial_emu_positions(
                 child,
                 current_angle, current_angle + angle_span,
                 depth + 1, max_depth,
-                pos, branch_color_map,
+                emu_pos, branch_color_map,
+                cx, cy, rx_outer, ry_outer,
                 parent_color=color,
                 l1_index=next_l1_index,
             )
@@ -342,58 +365,14 @@ class MindmapRenderer(BaseDiagramRenderer):
         """
         return _NODE_SIZES[min(depth, 2)]
 
-    def _center_to_emu(
-        self,
-        x_norm: float,
-        y_norm: float,
-        w_emu: int,
-        h_emu: int,
-        left: int,
-        top: int,
-        width: int,
-        height: int,
-    ) -> tuple[int, int]:
-        """
-        正規化座標（-1〜1）をEMUの中心座標に変換する。
-
-        ノードサイズに応じたマージンを確保して中心座標を計算する。
-
-        Parameters
-        ----------
-        x_norm, y_norm : float
-            正規化座標（-1.0〜1.0）。
-        w_emu, h_emu : int
-            ノードの幅・高さ（EMU）。
-        left, top, width, height : int
-            描画エリアのEMU座標。
-
-        Returns
-        -------
-        tuple[int, int]
-            (cx, cy) 中心座標（EMU）。
-        """
-        margin_x = w_emu // 2
-        margin_y = h_emu // 2
-        usable_w = max(1, width - w_emu)
-        usable_h = max(1, height - h_emu)
-        x_ratio = (x_norm + 1.0) / 2.0
-        y_ratio = (y_norm + 1.0) / 2.0
-        cx = left + margin_x + int(x_ratio * usable_w)
-        cy = top + margin_y + int(y_ratio * usable_h)
-        return cx, cy
-
     def _draw_mindmap_node(
         self,
         slide: Slide,
         node: dict,
-        x_norm: float,
-        y_norm: float,
+        cx_emu: int,
+        cy_emu: int,
         depth: int,
         fill_rgb: tuple[int, int, int],
-        left: int,
-        top: int,
-        width: int,
-        height: int,
     ) -> object:
         """
         ノードをtype別の形状でスライドに描画し、カラーを適用する。
@@ -407,14 +386,12 @@ class MindmapRenderer(BaseDiagramRenderer):
             描画対象スライド。
         node : dict
             ノードデータ（nodeId, descr, type等を持つ）。
-        x_norm, y_norm : float
-            ノード中心の正規化座標。
+        cx_emu, cy_emu : int
+            ノード中心のEMU座標（楕円ラジアルレイアウトで計算済み）。
         depth : int
             ノードの深さ（0=ルート, 1=L1, 2以降）。
         fill_rgb : tuple[int, int, int]
             塗り色の(R, G, B)。
-        left, top, width, height : int
-            描画エリアのEMU座標。
 
         Returns
         -------
@@ -425,11 +402,8 @@ class MindmapRenderer(BaseDiagramRenderer):
         label = node.get("descr", node.get("nodeId", ""))
         w_emu, h_emu = self._node_size(depth)
 
-        cx, cy = self._center_to_emu(
-            x_norm, y_norm, w_emu, h_emu, left, top, width, height
-        )
-        sl = cx - w_emu // 2
-        st = cy - h_emu // 2
+        sl = cx_emu - w_emu // 2
+        st = cy_emu - h_emu // 2
 
         # いったんRECTANGLEで追加してからXMLでprstGeomを書き換える
         shape = slide.shapes.add_shape(
@@ -494,47 +468,40 @@ class MindmapRenderer(BaseDiagramRenderer):
     def _draw_curved_mindmap_edge(
         self,
         slide: Slide,
-        src_pos: tuple[float, float],
-        dst_pos: tuple[float, float],
+        src_emu: tuple[int, int],
+        dst_emu: tuple[int, int],
         src_shape: object | None,
         dst_shape: object | None,
         color_rgb: tuple[int, int, int],
-        left: int,
-        top: int,
-        width: int,
-        height: int,
     ) -> None:
         """
         2ノード間にcurvedConnector3を描画し、ブランチカラーを適用する。
 
         始点・終点の方向に基づいて接続ポイントを選択し、
         コネクター線色をXML操作でブランチカラーに設定する。
+        EMU座標を直接受け取ることでアスペクト比の計算を省く。
 
         Parameters
         ----------
         slide : Slide
             描画対象スライド。
-        src_pos, dst_pos : tuple[float, float]
-            始点・終点の正規化座標。
+        src_emu, dst_emu : tuple[int, int]
+            始点・終点の中心EMU座標。
         src_shape, dst_shape : Shape | None
             始点・終点のShapeオブジェクト（Noneの場合は接続スキップ）。
         color_rgb : tuple[int, int, int]
             コネクター線のRGB色。
-        left, top, width, height : int
-            描画エリアのEMU座標。
         """
-        sx_n, sy_n = src_pos
-        dx_n, dy_n = dst_pos
-        sx, sy = self._pos_to_emu(sx_n, sy_n, left, top, width, height)
-        dx, dy = self._pos_to_emu(dx_n, dy_n, left, top, width, height)
+        sx, sy = src_emu
+        dx, dy = dst_emu
 
         # curvedConnector3 を追加する（MSO_CONNECTOR_TYPE.CURVE = 3）
         connector = slide.shapes.add_connector(
             3, Emu(sx), Emu(sy), Emu(dx), Emu(dy)
         )
 
-        # 方向ベクトルから接続ポイントインデックスを決定する
-        src_cp, dst_cp = self._connection_indices(dx_n - sx_n, dy_n - sy_n)
+        # 方向ベクトルから接続ポイントインデックスを決定する（EMU差分を使用）
+        src_cp, dst_cp = self._connection_indices(dx - sx, dy - sy)
         if src_shape is not None:
             connector.begin_connect(src_shape, src_cp)
         if dst_shape is not None:
