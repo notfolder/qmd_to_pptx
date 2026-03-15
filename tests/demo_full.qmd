@@ -378,20 +378,25 @@ gitGraph
 
 ```mermaid
 mindmap
-    root((qmd_to_pptx))
-        入力形式
-            QMD
-            Markdown
-        出力
-            PPTX
-        機能
-            数式
-            Mermaid図
-            テーブル
-            コード
-        利用方法
-            ライブラリ
-            MCPサーバー
+    root((プログラミング言語))
+        スクリプト系
+            ((Python))
+            ((Ruby))
+            ((JavaScript))
+        コンパイル系[静的型付け]
+            {{Rust}}
+            {{Go}}
+            (Java)
+        関数型
+            ))Haskell((
+            ))Erlang((
+        Web
+            [HTML]
+            [CSS]
+            (TypeScript)
+        )クエリ言語(
+            [SQL]
+            [GraphQL]
 ```
 
 ## 13. タイムライン（Timeline）
