@@ -15,6 +15,8 @@ from .base import BaseDiagramRenderer
 from .class_diagram import ClassDiagramRenderer
 from .er_diagram import ErDiagramRenderer
 from .flowchart import FlowchartRenderer
+from .gantt_parser import parse_gantt
+from .gantt_renderer import GanttRenderer
 from .mindmap import MindmapRenderer
 from .sequence_diagram import SequenceDiagramRenderer
 from .state_diagram import StateDiagramRenderer
@@ -37,6 +39,7 @@ class MermaidRenderer:
         self._er_diagram = ErDiagramRenderer()
         self._mindmap = MindmapRenderer()
         self._sequence = SequenceDiagramRenderer()
+        self._gantt = GanttRenderer()
         # フォールバック描画は BaseDiagramRenderer に委ねる
         self._base = BaseDiagramRenderer()
 
@@ -79,6 +82,17 @@ class MermaidRenderer:
             self._base._render_fallback(slide, mermaid_text, left, top, width, height)
             return
 
+        # gantt は mermaid-parser-py が graph_data を返せないため、
+        # パーサー呼び出し前にカスタムパーサーへ直接委譲する
+        if first_line.startswith("gantt"):
+            try:
+                gantt_chart = parse_gantt(mermaid_text)
+            except Exception:
+                self._base._render_fallback(slide, mermaid_text, left, top, width, height)
+                return
+            self._gantt.render(slide, gantt_chart, left, top, width, height)
+            return
+
         # sequenceDiagram は graph_type="sequence" で返るが、
         # パーサー呼び出し前に first_line で早期検出して直接委譲することもできる
         # （パーサーが正常に対応していることを確認済みのため、パーサー経由で処理する）
@@ -110,6 +124,15 @@ class MermaidRenderer:
         if graph_type == "mindmap":
             self._mindmap.render(slide, graph_data, left, top, width, height)
             return
+        if graph_type == "gantt":
+            # graph_data={} になるケースのフォールバック（上の early-return で処理済みのため通常不達）
+            try:
+                gantt_chart = parse_gantt(mermaid_text)
+            except Exception:
+                pass
+            else:
+                self._gantt.render(slide, gantt_chart, left, top, width, height)
+                return
 
         # flowchart / graph 系: FlowchartRenderer に委譲する
         vertices = graph_data.get("vertices", {})

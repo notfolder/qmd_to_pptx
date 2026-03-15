@@ -172,20 +172,24 @@ sequenceDiagram
     A->>A: 内部状態更新
 ```
 
-## 3. ガントチャート（Gantt Diagram）
+## 3. ガントチャート（Gantt Diagram）— 全タグ・after参照デモ
 
 ```mermaid
 gantt
-    title プロジェクト計画
+    title プロジェクト計画 2024
     dateFormat YYYY-MM-DD
-    section 設計
-        要件定義  :done, des1, 2024-01-01, 2024-01-07
-        基本設計  :done, des2, 2024-01-08, 7d
-    section 実装
-        コーディング :active, dev1, 2024-01-15, 14d
-        テスト       :        dev2, after dev1, 7d
+    excludes weekends
+    section 設計フェーズ
+        要件定義      :done, des1, 2024-01-02, 2024-01-07
+        基本設計      :done, des2, after des1, 7d
+        詳細設計      :done, crit, des3, after des2, 5d
+    section 実装フェーズ
+        コーディング  :active, dev1, after des3, 14d
+        コードレビュー :crit, rev1, after dev1, 3d
+        テスト        :dev2, after dev1, 7d
     section リリース
-        デプロイ :milestone, 2024-02-05, 1d
+        ステージング確認 :crit, stg1, after rev1, 2d
+        本番デプロイ  :milestone, 2024-02-19, 1d
 ```
 
 ## 4. クラス図（Class Diagram）- 全接続タイプ
