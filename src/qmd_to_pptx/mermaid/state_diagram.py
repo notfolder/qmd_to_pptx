@@ -365,7 +365,13 @@ class StateDiagramRenderer(BaseDiagramRenderer):
             except Exception:
                 pass
 
-        # サイクルあり: kamada_kawai → spring にフォールバックする
+        # サイクルあり: BFS rank layout で方向を尊重しつつ配置する
+        try:
+            return self._bfs_rank_layout(G, direction)
+        except Exception:
+            pass
+
+        # 最終フォールバック（方向考慮なし）
         try:
             return nx.kamada_kawai_layout(G)
         except Exception:
@@ -427,6 +433,93 @@ class StateDiagramRenderer(BaseDiagramRenderer):
                     pos[nid] = (-level_pos, span_pos)
                 else:
                     # 不明な方向は TB にフォールバックする
+                    pos[nid] = (span_pos, level_pos)
+
+        return pos
+
+    def _bfs_rank_layout(
+        self,
+        G: nx.DiGraph,
+        direction: str,
+    ) -> dict[str, tuple[float, float]]:
+        """
+        BFS によるランク割り当てに基づく階層レイアウト座標（-1.0〜1.0）を返す。
+
+        サイクルを含むグラフでも動作する。既にランク付き済みのノードはスキップすることで
+        バックエッジ（サイクル辺）を自然に無視する。
+
+        Parameters
+        ----------
+        G : nx.DiGraph
+            レイアウト対象グラフ（サイクルを含んでもよい）。
+        direction : str
+            描画方向（"TB"/"TD"/"BT"/"LR"/"RL"）。
+
+        Returns
+        -------
+        dict[str, tuple[float, float]]
+            ノードIDをキー、正規化座標(-1.0〜1.0)のタプルを値とする辞書。
+        """
+        from collections import deque
+
+        # 始点ノード（入次数が 0）を BFS の起点にする
+        sources = [n for n in G.nodes() if G.in_degree(n) == 0]
+        if not sources:
+            # サイクルのみで始点なし: 任意の1ノードを選ぶ
+            sources = list(G.nodes())[:1]
+
+        rank: dict[str, int] = {}
+        queue: deque[str] = deque()
+        for s in sources:
+            if s not in rank:
+                rank[s] = 0
+                queue.append(s)
+
+        # BFS でランクを伝播 (既ランク済みノードはスキップ → サイクル対策)
+        while queue:
+            node = queue.popleft()
+            for succ in G.successors(node):
+                if succ not in rank:
+                    rank[succ] = rank[node] + 1
+                    queue.append(succ)
+
+        # BFS で到達できなかったノードは rank 0 に割り当てる
+        for n in G.nodes():
+            if n not in rank:
+                rank[n] = 0
+
+        max_rank = max(rank.values()) if rank else 0
+        levels: dict[int, list[str]] = {}
+        for n, r in rank.items():
+            levels.setdefault(r, []).append(n)
+
+        pos: dict[str, tuple[float, float]] = {}
+        n_levels = max_rank + 1
+
+        for level_idx in range(n_levels):
+            gen_nodes = sorted(levels.get(level_idx, []))
+            n_nodes = len(gen_nodes)
+
+            if n_levels == 1:
+                level_pos = 0.0
+            else:
+                level_pos = (level_idx / (n_levels - 1)) * 1.8 - 0.9
+
+            for span_idx, nid in enumerate(gen_nodes):
+                if n_nodes == 1:
+                    span_pos = 0.0
+                else:
+                    span_pos = (span_idx / (n_nodes - 1)) * 1.8 - 0.9
+
+                if direction in ("TB", "TD"):
+                    pos[nid] = (span_pos, level_pos)
+                elif direction == "BT":
+                    pos[nid] = (span_pos, -level_pos)
+                elif direction == "LR":
+                    pos[nid] = (level_pos, span_pos)
+                elif direction == "RL":
+                    pos[nid] = (-level_pos, span_pos)
+                else:
                     pos[nid] = (span_pos, level_pos)
 
         return pos

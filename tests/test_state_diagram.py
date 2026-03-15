@@ -901,3 +901,97 @@ class TestStateConcurrent:
             Emu(457200), Emu(457200), Emu(8229600), Emu(4800000)
         )
         assert len(slide.shapes) > 0
+
+
+# ---------------------------------------------------------------------------
+# BFS ランクレイアウト（サイクルを含む状態図の縦配置）テスト
+# ---------------------------------------------------------------------------
+
+class TestBfsRankLayout:
+    """サイクルのある状態図でも TB 方向で縦に並ぶことを確認する。"""
+
+    def setup_method(self) -> None:
+        """テスト前に StateDiagramRenderer インスタンスを生成する。"""
+        self.renderer = StateDiagramRenderer()
+
+    def test_cyclic_diagram_does_not_raise(self) -> None:
+        """
+        サイクル（エラー → 待機中 → 処理中 → エラー）を含む状態図が
+        例外なく描画できる（demo_full.qmd 5a に対応）。
+        """
+        slide = _make_slide()
+        graph_data = _make_graph_data(
+            nodes=[
+                {"id": "__start__", "label": "", "shape": "stateStart"},
+                {"id": "待機中", "label": "待機中", "shape": "rect"},
+                {"id": "処理中", "label": "処理中", "shape": "rect"},
+                {"id": "完了", "label": "完了", "shape": "rect"},
+                {"id": "エラー", "label": "エラー", "shape": "rect"},
+                {"id": "__end__", "label": "", "shape": "stateEnd"},
+            ],
+            edges=[
+                {"start": "__start__", "end": "待機中", "label": ""},
+                {"start": "待機中", "end": "処理中", "label": "開始"},
+                {"start": "処理中", "end": "完了", "label": "成功"},
+                {"start": "処理中", "end": "エラー", "label": "失敗"},
+                {"start": "エラー", "end": "待機中", "label": "リトライ"},  # サイクル辺
+                {"start": "完了", "end": "__end__", "label": ""},
+            ],
+        )
+        self.renderer.render(slide, graph_data, _L, _T, _W, _H)
+        assert len(slide.shapes) > 0
+
+    def test_cyclic_diagram_tb_arranges_vertically(self) -> None:
+        """
+        サイクルを含む状態図を TB 方向で描画したとき、
+        ノードの Y 座標が複数の値を取る（縦に並んでいる）ことを確認する。
+        """
+        import networkx as nx
+
+        # StateDiagramRenderer 内部の _bfs_rank_layout を直接テストする
+        G = nx.DiGraph()
+        nodes = ["__start__", "待機中", "処理中", "完了", "エラー", "__end__"]
+        G.add_nodes_from(nodes)
+        # サイクル辺: エラー → 待機中
+        edges = [
+            ("__start__", "待機中"),
+            ("待機中", "処理中"),
+            ("処理中", "完了"),
+            ("処理中", "エラー"),
+            ("エラー", "待機中"),  # サイクル
+            ("完了", "__end__"),
+        ]
+        G.add_edges_from(edges)
+
+        pos = self.renderer._bfs_rank_layout(G, "TB")
+
+        # 全ノードがレイアウトに含まれる
+        assert set(pos.keys()) == set(nodes)
+
+        # TB 方向なので Y 座標に複数の異なる値がある（=縦に並んでいる）
+        y_values = [v[1] for v in pos.values()]
+        assert len(set(y_values)) > 1, (
+            f"TB 方向のはずが Y 座標が単一値: {y_values}"
+        )
+
+    def test_cyclic_diagram_via_mermaid_renderer(self) -> None:
+        """
+        サイクルを含む stateDiagram-v2 が MermaidRenderer 経由で
+        例外なく描画でき、シェイプが追加される。
+        """
+        slide = _make_slide()
+        renderer = MermaidRenderer()
+        elem = _make_mermaid_element(
+            "stateDiagram-v2\n"
+            "    [*] --> 待機中\n"
+            "    待機中 --> 処理中 : 開始\n"
+            "    処理中 --> 完了 : 成功\n"
+            "    処理中 --> エラー : 失敗\n"
+            "    エラー --> 待機中 : リトライ\n"
+            "    完了 --> [*]\n"
+        )
+        renderer.render(
+            slide, elem,
+            Emu(457200), Emu(457200), Emu(8229600), Emu(4800000)
+        )
+        assert len(slide.shapes) > 0
