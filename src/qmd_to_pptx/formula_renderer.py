@@ -136,11 +136,13 @@ class FormulaRenderer:
             return text[2:-2].strip()
         return text
 
-    def _latex_to_omml(self, latex_text: str) -> str:
+    def _latex_to_omml(self, latex_text: str) -> bytes:
         """
-        LaTeXテキストをOMML文字列に変換する。
+        LaTeXテキストをOMML要素（lxml Element）の bytes に変換する。
 
         latex2mathmlでMathMLに変換し、mathml2ommlでOMMLに変換する。
+        mathml2omml が出力する OMML 文字列は名前空間宣言（xmlns:m=...）を
+        持たないため、名前空間を付与してから lxml でパースできる bytes を返す。
 
         Parameters
         ----------
@@ -149,11 +151,18 @@ class FormulaRenderer:
 
         Returns
         -------
-        str
-            OMML XML文字列。
+        bytes
+            名前空間付き OMML XML バイト列。
         """
         # LaTeXをMathMLに変換する
         mathml_str = latex2mathml.converter.convert(latex_text)
-        # MathMLをOMMLに変換する
+        # MathMLをOMMLに変換する（m: プレフィックスの名前空間宣言が欠落している）
         omml_str = mathml2omml.convert(mathml_str)
-        return omml_str
+        # lxml で解析できるよう名前空間宣言を補完する
+        OMML_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"
+        omml_with_ns = omml_str.replace(
+            "<m:oMath>",
+            f'<m:oMath xmlns:m="{OMML_NS}">',
+            1,
+        )
+        return omml_with_ns.encode("utf-8")
