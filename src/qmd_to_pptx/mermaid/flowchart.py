@@ -674,10 +674,22 @@ class FlowchartRenderer(BaseDiagramRenderer):
             label_cx = sx
             label_cy = sy
         else:
-            # ノード境界を抜けた直後の位置（ノード幅の0.6倍）にオフセット
-            offset = NODE_WIDTH_EMU * 0.6
-            label_cx = sx + int(vec_x / length * offset)
-            label_cy = sy + int(vec_y / length * offset)
+            # 単位ベクトル
+            ux = vec_x / length
+            uy = vec_y / length
+            # 方向ベクトルとノード矩形の交点（中心からの距離）を計算する。
+            # 矩形の半幅/半高をそれぞれのベクトル成分で割った最小値が境界までの距離。
+            half_w = NODE_WIDTH_EMU / 2
+            half_h = NODE_HEIGHT_EMU / 2
+            if abs(ux) < 1e-9:
+                t = half_h
+            elif abs(uy) < 1e-9:
+                t = half_w
+            else:
+                t = min(half_w / abs(ux), half_h / abs(uy))
+            # ラベル中心をノード境界線上に配置する
+            label_cx = sx + int(ux * t)
+            label_cy = sy + int(uy * t)
 
         # テキストボックスのサイズ（ノード幅 × ノード高さ半分）
         box_w = NODE_WIDTH_EMU
