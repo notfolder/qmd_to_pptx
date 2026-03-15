@@ -46,11 +46,17 @@ class FormulaRenderer:
             return
 
         try:
-            omml_str = self._latex_to_omml(latex_text)
-            # runのXML要素にOMMLを追加する
+            omml_bytes = self._latex_to_omml(latex_text)
+            omml_elem = etree.fromstring(omml_bytes)
+
+            # a14:m 要素でOMMLをラップする（PowerPointのインライン数式構造）
+            A14_NS = "http://schemas.microsoft.com/office/drawing/2010/main"
+            a14_m = etree.Element(f"{{{A14_NS}}}m")
+            a14_m.append(omml_elem)
+
+            # runの後にa14:mを挿入する
             run_elem = run._r
-            omml_elem = etree.fromstring(omml_str)
-            run_elem.addnext(omml_elem)
+            run_elem.addnext(a14_m)
         except Exception:
             # 変換失敗時はLaTeXテキストをそのままrunに設定する
             run.text = latex_text
@@ -90,11 +96,22 @@ class FormulaRenderer:
             return
 
         try:
-            omml_str = self._latex_to_omml(latex_text)
-            # スライドのXML要素に直接OMMLを追加する
-            spTree = slide.shapes._spTree
-            omml_elem = etree.fromstring(omml_str)
-            spTree.append(omml_elem)
+            omml_bytes = self._latex_to_omml(latex_text)
+            omml_elem = etree.fromstring(omml_bytes)
+
+            # テキストボックスshapeを作成する
+            shape = slide.shapes.add_textbox(
+                Emu(left), Emu(top), Emu(width), Emu(height)
+            )
+
+            # テキストフレームの段落XML要素を取得する
+            para = shape.text_frame.paragraphs[0]
+            p_elem = para._p  # lxml element
+
+            # a14:m 要素を作成してOMML要素を追加する（PowerPointのブロック数式構造）
+            A14_NS = "http://schemas.microsoft.com/office/drawing/2010/main"
+            a14_m = etree.SubElement(p_elem, f"{{{A14_NS}}}m")
+            a14_m.append(omml_elem)
         except Exception:
             # 変換失敗時はテキストボックスにLaTeXテキストを表示する
             shape = slide.shapes.add_textbox(

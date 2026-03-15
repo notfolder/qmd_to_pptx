@@ -379,7 +379,11 @@ class SlideRenderer:
         elif ntype == DOMNodeType.H2:
             self._text_renderer.render_heading(ph, elem, level=2)
         elif ntype == DOMNodeType.PARAGRAPH:
-            self._text_renderer.render_paragraph(ph, elem)
+            # インライン数式を含む場合は専用メソッドで処理する
+            if self._has_inline_formula(elem):
+                self._render_paragraph_with_inline(ph, elem)
+            else:
+                self._text_renderer.render_paragraph(ph, elem)
         elif ntype in (DOMNodeType.UL, DOMNodeType.OL):
             self._text_renderer.render_list(ph, elem, incremental=incremental)
         elif ntype == DOMNodeType.CODE:
@@ -473,7 +477,11 @@ class SlideRenderer:
         elif ntype == DOMNodeType.H2:
             self._text_renderer.render_heading(shape, elem, level=2)
         elif ntype == DOMNodeType.PARAGRAPH:
-            self._text_renderer.render_paragraph(shape, elem)
+            # インライン数式を含む場合は専用メソッドで処理する
+            if self._has_inline_formula(elem):
+                self._render_paragraph_with_inline(shape, elem)
+            else:
+                self._text_renderer.render_paragraph(shape, elem)
         elif ntype in (DOMNodeType.UL, DOMNodeType.OL):
             self._text_renderer.render_list(shape, elem, incremental=incremental)
         elif ntype == DOMNodeType.CODE:
@@ -869,6 +877,68 @@ class SlideRenderer:
                     self._write_via_placeholder(slide, idx, child_node, layout_name)
                 else:
                     self._write_via_textbox(slide, role, layout_def, child_node)
+
+    def _has_inline_formula(self, element: ET.Element) -> bool:
+        """
+        段落要素の子にインライン数式（span.arithmatex）が含まれるかを確認する。
+
+        Parameters
+        ----------
+        element : ET.Element
+            確認対象の段落要素。
+
+        Returns
+        -------
+        bool
+            インライン数式が含まれる場合はTrue。
+        """
+        for child in element:
+            if child.tag == "span" and "arithmatex" in child.get("class", ""):
+                return True
+        return False
+
+    def _render_paragraph_with_inline(
+        self, shape: object, element: ET.Element
+    ) -> None:
+        """
+        インライン数式（span.arithmatex）を含む段落をshapeのテキストフレームに書き込む。
+
+        段落の各子要素を走査し、arithmatex spanはOMMLとして挿入し、
+        それ以外はrunのテキストとして追加する。
+
+        Parameters
+        ----------
+        shape : object
+            python-pptxのShapeオブジェクト。
+        element : ET.Element
+            段落要素（p）。インライン数式spanを子に持つ。
+        """
+        tf = shape.text_frame
+        tf.clear()
+        tf.word_wrap = True
+        para = tf.paragraphs[0]
+
+        def add_text_run(text: str) -> None:
+            """テキストを追加するrunを生成する。空文字列は無視する。"""
+            if text:
+                r = para.add_run()
+                r.text = text
+                r.font.size = Pt(18)
+
+        # 段落先頭のテキストノードを追加する（element.text は最初の子要素の前のテキスト）
+        add_text_run(element.text or "")
+
+        for child in element:
+            if child.tag == "span" and "arithmatex" in child.get("class", ""):
+                # インライン数式: 空のrunを起点としてOMMLを挿入する
+                r = para.add_run()
+                r.text = ""
+                self._formula_renderer.render_inline(r, child)
+            else:
+                # その他のインライン要素（em, strong 等）はテキストとして追加する
+                add_text_run("".join(child.itertext()))
+            # 各子要素の後続テキスト（tail）を追加する
+            add_text_run(child.tail or "")
 
     def _classify_child(self, element: ET.Element) -> DOMNodeInfo | None:
         """
