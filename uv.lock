@@ -1833,6 +1833,7 @@ dependencies = [
     { name = "numpy" },
     { name = "pymdown-extensions" },
     { name = "python-pptx" },
+    { name = "pyyaml" },
 ]
 
 [package.dev-dependencies]
@@ -1852,6 +1853,7 @@ requires-dist = [
     { name = "numpy" },
     { name = "pymdown-extensions" },
     { name = "python-pptx" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata.requires-dev]

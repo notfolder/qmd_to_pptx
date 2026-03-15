@@ -1,0 +1,18 @@
+# qmd_to_pptx テンプレート設定ファイル
+#
+# このファイルに PPTXテンプレートを登録すると、MCPサーバーの
+# markdown_to_pptx ツールで template_id を使ってテンプレートを指定できます。
+#
+# このファイルのパスは環境変数 QMD_TO_PPTX_TEMPLATES で上書きできます。
+# 未設定の場合は MCP サーバーのカレントディレクトリの config/templates.yaml が使われます。
+#
+# 記載例:
+#   templates:
+#     corporate_standard:
+#       path: /path/to/corporate_standard.pptx
+#       description: "企業標準テンプレート"
+#     dark_theme:
+#       path: /path/to/dark_theme.pptx
+#       description: "ダークテーマテンプレート"
+
+templates:

@@ -13,6 +13,7 @@ dependencies = [
     "latex2mathml",
     "mathml2omml",
     "mcp[cli]",
+    "pyyaml",
 ]
 
 [project.scripts]
