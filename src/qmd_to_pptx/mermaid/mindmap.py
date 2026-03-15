@@ -20,9 +20,9 @@ from .base import BaseDiagramRenderer
 # ---- ノードサイズ定義（深さ別、EMU）----
 # 深い階層ほど小さくしてキャンバス内に収まりやすくする
 _NODE_SIZES: list[tuple[int, int]] = [
-    (1_200_000, 480_000),   # depth 0: ルートノード
-    (900_000, 370_000),     # depth 1: L1ノード
-    (680_000, 280_000),     # depth 2以降: 末端ノード
+    (1_500_000, 580_000),   # depth 0: ルートノード
+    (1_100_000, 440_000),   # depth 1: L1ノード
+    (820_000, 330_000),     # depth 2以降: 末端ノード
 ]
 
 # ---- ブランチカラーパレット（L1ブランチ用、最大8色） ----
@@ -433,7 +433,7 @@ class MindmapRenderer(BaseDiagramRenderer):
         shape.text = label
         tf = shape.text_frame
         tf.word_wrap = True
-        font_pt = Pt(14 if depth == 0 else 11 if depth == 1 else 10)
+        font_pt = Pt(16 if depth == 0 else 13 if depth == 1 else 11)
         for para in tf.paragraphs:
             for run in para.runs:
                 run.font.size = font_pt
