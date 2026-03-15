@@ -8,7 +8,7 @@
 
 ## 2. 全体アーキテクチャ
 
-ライブラリは以下の9つの主要コンポーネントで構成される。各コンポーネントは入力を受け取り、処理結果を次のコンポーネントへ渡すパイプライン構造を取る。
+ライブラリは以下の9つの主要コンポーネントで構成される。各コンポーネントは入力を受け取り、処理結果を次のコンポーネントへ渡すパイプライン構造を取る。これらに加え、スライドレンダラーが参照する補助リソースとして `default_layout.json` の設計を4.9節に記述する。
 
 ```mermaid
 flowchart TD
@@ -276,8 +276,12 @@ flowchart LR
 
 **処理詳細：**
 
-1. YAMLフロントマターの `format.pptx.reference-doc` フィールドで指定されたPPTXファイルをpython-pptxでロードし、プレゼンテーションオブジェクトを生成する
-2. スライド分割器が生成した各スライド本文の区切り種別・コンテンツ内容・背景画像パスに基づき、後述のレイアウト自動選択ルールで適切なスライドレイアウトを選択して新規スライドをプレゼンテーションに追加する
+1. `render` 関数の `reference_doc` 引数の有無に応じて、プレゼンテーションオブジェクトの生成方式を決定する。この判定はライブラリ起動時に一度だけ行う。その後、各スライドのコンテンツ配置時には、配置するプレースホルダーのidxごとに存在確認を行い、以下の4パターンのいずれかを適用する
+   - **パターンA（reference_doc未指定）：** `Presentation()` を引数なしで呼び出し、新規Blank状態のプレゼンテーションオブジェクトを生成する。全コンテンツは `default_layout.json`（4.9節参照）の座標を使用して `add_textbox()` で配置する。フォント・背景色はpython-pptxのデフォルト（白背景・Calibriフォント）となる
+   - **パターンB（reference_doc指定 + 全プレースホルダーあり）：** `Presentation(reference_doc)` でテンプレートを読み込む。スライド追加後に `slide.placeholders` のidxリストを参照し、対象レイアウトに必要な全てのプレースホルダーが存在することを確認した上で `slide.placeholders[idx]` に直接コンテンツを書き込む。テンプレートのフォント・背景色・デザインを継承する
+   - **パターンC（reference_doc指定 + 全プレースホルダーなし）：** `Presentation(reference_doc)` でテンプレートを読み込む。`slide.placeholders` のidxリストに対象レイアウトのプレースホルダーが1つも存在しない場合は、全コンテンツを `default_layout.json` の座標を使用して `add_textbox()` で配置するJSONフォールバックに切り替える。テンプレートのビジュアルを継承しつつ配置はJSONで補う
+   - **パターンD（reference_doc指定 + プレースホルダーが一部欠けている）：** `Presentation(reference_doc)` でテンプレートを読み込む。スライド追加後に `slide.placeholders` のidxリストを参照し、存在するidxのプレースホルダーには `slide.placeholders[idx]` に直接書き込み、存在しないidxについては `default_layout.json` の座標を使用して `add_textbox()` で補完する。同一スライド内でプレースホルダー書き込みとJSONフォールバックが混在する
+2. スライド分割器が生成した各スライド本文の区切り種別・コンテンツ内容・背景画像パスに基づき、後述のレイアウト自動選択ルールで適切なスライドレイアウトを選択して新規スライドをプレゼンテーションに追加する。レイアウトは `prs.slide_layouts` をレイアウト名で検索して取得し、インデックスには依存しない
 3. DOMトラバーサーからノード種別の通知を受け、対応するレンダラー（テキスト・Mermaid・数式）を呼び出す
 4. `.notes` divのコンテンツをスライドのノートテキストフレームに書き込む
 5. `.incremental` divおよび `.nonincremental` div内のリストに対してインクリメンタル表示のアニメーション設定を適用する。YAMLの `format.pptx.incremental: true` が設定されている場合は、div指定がないリストにも逐次表示を適用し、`.nonincremental` div内のリストのみ一括表示とする
@@ -300,7 +304,54 @@ flowchart LR
 
 **テンプレートPPTXの必要要件：**
 
-使用するテンプレートPPTXには上記7つのレイアウト名（英語名）がすべて存在することが必須条件となる。対応するレイアウトが見つからない場合は、デフォルトのPandoc参照PPTXに含まれる同名レイアウトがフォールバックとして使用される。
+使用するテンプレートPPTXには上記7つのレイアウト名（英語名）が存在することが推奨される。レイアウト名が見つからない場合はパターンCとして全コンテンツをJSONフォールバックで補完する。レイアウトは存在するがプレースホルダーが一部欠けている場合はパターンDとして欠けている箇所のみ `default_layout.json`（4.9節参照）の座標情報を使用した `add_textbox()` で補完する。
+
+---
+
+### 4.9 レイアウト定義JSON
+
+**責務：** `reference_doc` が未指定の場合（パターンA）、またはテンプレートに目的のプレースホルダーが存在しない場合（パターンC）に、コンテンツの配置座標をスライドレンダラーへ提供する。
+
+**ファイル：** `default_layout.json`（ライブラリパッケージに同梱）
+
+**スキーマ定義：**
+
+| キー名 | 内容 |
+|---|---|
+| `slide_width_emu` | スライド幅（EMU単位） |
+| `slide_height_emu` | スライド高さ（EMU単位） |
+| `layouts.<レイアウト名>.placeholders` | 各レイアウトのプレースホルダー配列 |
+| `placeholders[].idx` | プレースホルダーのidx（`slide.placeholder_format.idx` と対応） |
+| `placeholders[].role` | コンテンツの役割（下表参照） |
+| `placeholders[].left` | 左端座標（EMU） |
+| `placeholders[].top` | 上端座標（EMU） |
+| `placeholders[].width` | 幅（EMU） |
+| `placeholders[].height` | 高さ（EMU） |
+
+**role 定義：**
+
+| レイアウト名 | role | idx | 用途 |
+|---|---|---|---|
+| Title Slide | title | 0 | タイトルテキスト |
+| Title Slide | subtitle | 1 | サブタイトル（author・date） |
+| Title and Content | title | 0 | スライドタイトル |
+| Title and Content | body | 1 | メインコンテンツ |
+| Section Header | title | 0 | セクションタイトル |
+| Section Header | body | 1 | セクション説明テキスト |
+| Two Content | title | 0 | スライドタイトル |
+| Two Content | left_content | 1 | 左カラムコンテンツ |
+| Two Content | right_content | 2 | 右カラムコンテンツ |
+| Comparison | title | 0 | スライドタイトル |
+| Comparison | left_content | 1 | 左カラムコンテンツ |
+| Comparison | right_content | 2 | 右カラムコンテンツ |
+| Content with Caption | title | 0 | スライドタイトル |
+| Content with Caption | caption | 1 | キャプションテキスト |
+| Content with Caption | body | 2 | メインコンテンツ |
+| Blank | （なし） | — | コンテンツなし（スピーカーノートのみ格納） |
+
+**処理詳細：**
+
+スライドレンダラーがJSONフォールバックを使用する際、配置するコンテンツの role をキーとしてこのJSONを参照し、対応する `left`/`top`/`width`/`height` の値を `add_textbox()` の引数として使用する。このファイルの座標値はライブラリに同梱された `custom-template.pptx` のレイアウトから抽出した値を基準とする。
 
 ---
 
@@ -311,10 +362,10 @@ flowchart LR
 | 引数名 | 型 | 内容 |
 |---|---|---|
 | input | 文字列 | QMDまたはMarkdownのファイルパス、あるいはいずれかのテキスト文字列 |
-| reference_doc | 文字列 | ベースとなるPPTXテンプレートファイルのパス（必須） |
 | output | 文字列 | 出力先PPTXファイルのパス |
+| reference_doc | 文字列またはNone | ベースとなるPPTXテンプレートファイルのパス（省略可。省略時は白背景・Calibriフォントのデフォルト外観で生成し、コンテンツ配置は `default_layout.json` の座標を使用する） |
 
-`render` 関数は内部で 前処理器 → YAMLパーサー → スライド分割器 → Markdownパーサー → DOMトラバーサー → スライドレンダラーの順に各コンポーネントを呼び出し、最終的に指定された `output` パスにPPTXファイルを書き出す。`reference_doc` は必須引数であり、YAMLフロントマターの `format.pptx.reference-doc` フィールドが指定されている場合も `reference_doc` 引数の値を優先する。
+`render` 関数は内部で 前処理器 → YAMLパーサー → スライド分割器 → Markdownパーサー → DOMトラバーサー → スライドレンダラーの順に各コンポーネントを呼び出し、最終的に指定された `output` パスにPPTXファイルを書き出す。`reference_doc` は省略可能であり、指定されている場合はそのテンプレートのデザインを継承する。YAMLフロントマターの `format.pptx.reference-doc` フィールドが指定されている場合も `reference_doc` 引数の値を優先して使用する。
 
 ---
 
@@ -333,7 +384,7 @@ sequenceDiagram
     participant Mermaidレンダラー
     participant 数式レンダラー
 
-    呼び出し元 ->> 前処理器: render(input, reference_doc, output)
+    呼び出し元 ->> 前処理器: render(input, output[, reference_doc])
     前処理器 -->> スライドレンダラー: 正規化済みQMDテキストを渡す
     スライドレンダラー ->> YAMLパーサー: 正規化済みQMDテキストを渡す
     YAMLパーサー -->> スライドレンダラー: メタデータ辞書を返す
