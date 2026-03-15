@@ -342,11 +342,13 @@ flowchart LR
 | Two Content | left_content | 1 | 左カラムコンテンツ |
 | Two Content | right_content | 2 | 右カラムコンテンツ |
 | Comparison | title | 0 | スライドタイトル |
-| Comparison | left_content | 1 | 左カラムコンテンツ |
-| Comparison | right_content | 2 | 右カラムコンテンツ |
-| Content with Caption | title | 0 | スライドタイトル |
-| Content with Caption | caption | 1 | キャプションテキスト |
-| Content with Caption | body | 2 | メインコンテンツ |
+| Comparison | left_header | 1 | 左カラム上部ヘッダーテキスト |
+| Comparison | left_content | 2 | 左カラムメインコンテンツ |
+| Comparison | right_header | 3 | 右カラム上部ヘッダーテキスト |
+| Comparison | right_content | 4 | 右カラムメインコンテンツ |
+| Content with Caption | title | 0 | スライドタイトル（左上） |
+| Content with Caption | body | 1 | メインコンテンツ（右エリア） |
+| Content with Caption | caption | 2 | キャプションテキスト（左下エリア） |
 | Blank | （なし） | — | コンテンツなし（スピーカーノートのみ格納） |
 
 **処理詳細：**
