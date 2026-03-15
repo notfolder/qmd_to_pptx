@@ -62,12 +62,29 @@ class MermaidRenderer:
             mp = MermaidParser()
             result = mp.parse(mermaid_text)
             graph_data = result.get("graph_data", {})
-            nodes = self._extract_nodes(graph_data)
-            edges = self._extract_edges(graph_data)
+            graph_type = result.get("graph_type", "")
         except Exception:
             # パース失敗時はテキストボックスにそのまま表示する
             self._render_fallback(slide, mermaid_text, left, top, width, height)
             return
+
+        # graph_typeに応じて専用レンダラーへ分岐する
+        if graph_type == "stateDiagram":
+            self._render_state_diagram(slide, graph_data, left, top, width, height)
+            return
+        if graph_type == "class":
+            self._render_class_diagram(slide, graph_data, left, top, width, height)
+            return
+        if graph_type == "er":
+            self._render_er_diagram(slide, graph_data, left, top, width, height)
+            return
+        if graph_type == "mindmap":
+            self._render_mindmap(slide, graph_data, left, top, width, height)
+            return
+
+        # flowchart / graph 系: 頂点(vertices)とエッジから描画する
+        nodes = self._extract_nodes(graph_data)
+        edges = self._extract_edges(graph_data)
 
         if not nodes:
             self._render_fallback(slide, mermaid_text, left, top, width, height)
@@ -183,6 +200,7 @@ class MermaidRenderer:
         top: int,
         width: int,
         height: int,
+        label_map: dict[str, str] | None = None,
     ) -> dict[str, object]:
         """
         ノードを矩形Shapeとしてスライドに配置する。
@@ -203,6 +221,8 @@ class MermaidRenderer:
             描画エリアの幅（EMU）。
         height : int
             描画エリアの高さ（EMU）。
+        label_map : dict[str, str] | None
+            ノードIDをキー、表示ラベル文字列を値とする辞書。省略時はノードIDを表示する。
 
         Returns
         -------
@@ -226,8 +246,9 @@ class MermaidRenderer:
                 Emu(_NODE_WIDTH_EMU),
                 Emu(_NODE_HEIGHT_EMU),
             )
-            # ノードIDをテキストとして設定する
-            shape.text = node_id
+            # ノードの表示ラベルを決定する（label_mapがあればそれを優先する）
+            label = label_map.get(node_id, node_id) if label_map else node_id
+            shape.text = label
             tf = shape.text_frame
             for para in tf.paragraphs:
                 for run in para.runs:
@@ -342,6 +363,283 @@ class MermaidRenderer:
                 connector.begin_connect(src_shape, src_cp)
             if dst_shape is not None:
                 connector.end_connect(dst_shape, dst_cp)
+
+    def _render_state_diagram(
+        self,
+        slide: Slide,
+        graph_data: dict,
+        left: int,
+        top: int,
+        width: int,
+        height: int,
+    ) -> None:
+        """
+        stateDiagram-v2 を nodes リストと edges リストから描画する。
+
+        Parameters
+        ----------
+        slide : Slide
+            python-pptxのSlideオブジェクト。
+        graph_data : dict
+            graph_data辞書（"nodes"と"edges"キーを含む）。
+        left, top, width, height : int
+            描画エリアのEMU座標。
+        """
+        raw_nodes = graph_data.get("nodes", [])
+        raw_edges = graph_data.get("edges", [])
+        if not raw_nodes:
+            return
+
+        # ノードIDリストとラベルマップを構築する
+        nodes = [n["id"] for n in raw_nodes if "id" in n]
+        label_map = {n["id"]: n.get("label", n["id"]) for n in raw_nodes}
+        edges = [
+            (e["start"], e["end"])
+            for e in raw_edges
+            if "start" in e and "end" in e
+        ]
+
+        G = nx.DiGraph()
+        G.add_nodes_from(nodes)
+        for src, dst in edges:
+            G.add_edge(src, dst)
+        pos: dict[str, tuple[float, float]] = nx.spring_layout(G, seed=42)
+
+        node_shapes = self._draw_nodes(
+            slide, nodes, pos, left, top, width, height, label_map=label_map
+        )
+        self._draw_edges(slide, edges, pos, node_shapes, left, top, width, height)
+
+    def _render_class_diagram(
+        self,
+        slide: Slide,
+        graph_data: dict,
+        left: int,
+        top: int,
+        width: int,
+        height: int,
+    ) -> None:
+        """
+        classDiagram を classes 辞書と relations リストから描画する。
+
+        Parameters
+        ----------
+        slide : Slide
+            python-pptxのSlideオブジェクト。
+        graph_data : dict
+            graph_data辞書（"classes"と"relations"キーを含む）。
+        left, top, width, height : int
+            描画エリアのEMU座標。
+        """
+        classes = graph_data.get("classes", {})
+        relations = graph_data.get("relations", [])
+        if not classes:
+            return
+
+        nodes = list(classes.keys())
+        edges = [
+            (r["id1"], r["id2"])
+            for r in relations
+            if "id1" in r and "id2" in r
+        ]
+
+        G = nx.DiGraph()
+        G.add_nodes_from(nodes)
+        for src, dst in edges:
+            G.add_edge(src, dst)
+        pos: dict[str, tuple[float, float]] = nx.spring_layout(G, seed=42)
+
+        node_shapes = self._draw_nodes(slide, nodes, pos, left, top, width, height)
+        self._draw_edges(slide, edges, pos, node_shapes, left, top, width, height)
+
+    def _render_er_diagram(
+        self,
+        slide: Slide,
+        graph_data: dict,
+        left: int,
+        top: int,
+        width: int,
+        height: int,
+    ) -> None:
+        """
+        erDiagram を entities 辞書と relationships リストから描画する。
+
+        entities のキーはラベル（エンティティ名）、値の id フィールドが内部ID。
+        relationships は内部IDで参照するため逆引きマップを使用する。
+
+        Parameters
+        ----------
+        slide : Slide
+            python-pptxのSlideオブジェクト。
+        graph_data : dict
+            graph_data辞書（"entities"と"relationships"キーを含む）。
+        left, top, width, height : int
+            描画エリアのEMU座標。
+        """
+        entities = graph_data.get("entities", {})
+        relationships = graph_data.get("relationships", [])
+        if not entities:
+            return
+
+        # 内部IDからエンティティ名への逆引きマップを構築する
+        id_to_label: dict[str, str] = {
+            ent.get("id", ""): label
+            for label, ent in entities.items()
+            if ent.get("id")
+        }
+
+        nodes = list(entities.keys())
+        edges: list[tuple[str, str]] = [
+            (id_to_label[rel["entityA"]], id_to_label[rel["entityB"]])
+            for rel in relationships
+            if rel.get("entityA") in id_to_label and rel.get("entityB") in id_to_label
+        ]
+
+        G = nx.DiGraph()
+        G.add_nodes_from(nodes)
+        for src, dst in edges:
+            G.add_edge(src, dst)
+        pos: dict[str, tuple[float, float]] = nx.spring_layout(G, seed=42)
+
+        node_shapes = self._draw_nodes(slide, nodes, pos, left, top, width, height)
+        self._draw_edges(slide, edges, pos, node_shapes, left, top, width, height)
+
+    def _mindmap_collect_layout(
+        self,
+        node: dict,
+        depth_map: dict[str, int],
+        order_map: dict[str, float],
+        counter: list[int],
+    ) -> None:
+        """
+        マインドマップのツリーを後順走査して各ノードの深さと縦位置を収集する。
+
+        Parameters
+        ----------
+        node : dict
+            現在のノード（nodeId, level, children を持つ）。
+        depth_map : dict[str, int]
+            ノードIDをキーにした深さのマップ（ルートが1）。
+        order_map : dict[str, float]
+            ノードIDをキーにした縦位置（葉ノードは整数、内部ノードは子の中央）。
+        counter : list[int]
+            葉ノードの通し番号（リストで参照渡し）。
+        """
+        node_id = node.get("nodeId", "")
+        if not node_id:
+            return
+
+        # レベル値は4の倍数（4=depth1, 8=depth2, 12=depth3）
+        depth_map[node_id] = node.get("level", 4) // 4
+        children = node.get("children", [])
+
+        if not children:
+            # 葉ノード: 縦位置としてカウンター値を割り当てる
+            order_map[node_id] = float(counter[0])
+            counter[0] += 1
+        else:
+            # 内部ノード: 先に子を走査してから子の縦位置の平均を取る
+            for child in children:
+                self._mindmap_collect_layout(child, depth_map, order_map, counter)
+            child_orders = [
+                order_map[c["nodeId"]]
+                for c in children
+                if c.get("nodeId") in order_map
+            ]
+            order_map[node_id] = (
+                sum(child_orders) / len(child_orders) if child_orders else 0.0
+            )
+
+    def _mindmap_collect_edges(
+        self,
+        node: dict,
+        edges: list[tuple[str, str]],
+    ) -> None:
+        """
+        マインドマップのツリーを走査して親子エッジを収集する。
+
+        Parameters
+        ----------
+        node : dict
+            現在のノード。
+        edges : list[tuple[str, str]]
+            (親nodeId, 子nodeId) タプルを追加するリスト。
+        """
+        node_id = node.get("nodeId", "")
+        for child in node.get("children", []):
+            child_id = child.get("nodeId", "")
+            if node_id and child_id:
+                edges.append((node_id, child_id))
+            self._mindmap_collect_edges(child, edges)
+
+    def _render_mindmap(
+        self,
+        slide: Slide,
+        graph_data: dict,
+        left: int,
+        top: int,
+        width: int,
+        height: int,
+    ) -> None:
+        """
+        mindmap をツリーレイアウトで左→右方向に描画する。
+
+        ルートノードを左端に配置し、子ノードを深さに応じて右へ展開する。
+        縦位置は葉ノードの数を基準に均等分配する。
+
+        Parameters
+        ----------
+        slide : Slide
+            python-pptxのSlideオブジェクト。
+        graph_data : dict
+            graph_data辞書（"nodes"キーにツリー構造を含む）。
+        left, top, width, height : int
+            描画エリアのEMU座標。
+        """
+        nodes_data = graph_data.get("nodes", [])
+        if not nodes_data:
+            return
+
+        # 最初の要素がルートノード（children を含む完全ツリー）
+        root = nodes_data[0]
+
+        # ツリーを後順走査して深さと縦位置を収集する
+        depth_map: dict[str, int] = {}
+        order_map: dict[str, float] = {}
+        counter: list[int] = [0]
+        self._mindmap_collect_layout(root, depth_map, order_map, counter)
+
+        if not depth_map:
+            return
+
+        # descr フィールドを表示ラベルとして使う
+        label_map: dict[str, str] = {
+            n.get("nodeId", ""): n.get("descr", n.get("nodeId", ""))
+            for n in nodes_data
+            if n.get("nodeId")
+        }
+
+        # 正規化座標（-1.0〜1.0）を計算する（深さ→X、縦位置→Y）
+        max_depth = max(depth_map.values()) if depth_map else 1
+        leaf_count = counter[0]  # 葉ノードの総数
+        total = max(leaf_count - 1, 1)  # ゼロ除算を防ぐ
+
+        pos: dict[str, tuple[float, float]] = {}
+        for node_id, depth in depth_map.items():
+            x_norm = (depth / max_depth) * 2.0 - 1.0
+            y_val = order_map.get(node_id, 0.0)
+            y_norm = (y_val / total) * 2.0 - 1.0
+            pos[node_id] = (x_norm, y_norm)
+
+        # 親子エッジを収集する
+        edges: list[tuple[str, str]] = []
+        self._mindmap_collect_edges(root, edges)
+
+        all_node_ids = list(depth_map.keys())
+        node_shapes = self._draw_nodes(
+            slide, all_node_ids, pos, left, top, width, height, label_map=label_map
+        )
+        self._draw_edges(slide, edges, pos, node_shapes, left, top, width, height)
 
     def _render_fallback(
         self,
