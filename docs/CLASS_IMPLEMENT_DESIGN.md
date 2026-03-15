@@ -167,7 +167,7 @@ classDiagram
         -_layout_json: LayoutJSON
         +render_all(normalized_text: str, output: str, reference_doc: str)
         -_load_layout_json() LayoutJSON
-        -_select_layout(content: SlideContent) str
+        -_select_layout(content: SlideContent, nodes: list) str
         -_resolve_placeholder(slide, idx: int) bool
         -_write_via_placeholder(slide, idx: int, element: Element)
         -_write_via_textbox(slide, role: str, layout_def: LayoutDef, element: Element)
@@ -296,10 +296,10 @@ classDiagram
 |---|---|---|---|
 | `render_all` | `normalized_text: str`, `output: str`, `reference_doc: str \| None` | `None` | YAMLパーサー・スライド分割器・Markdownパーサー・DOMトラバーサーを順に呼び出し、全スライドを生成して指定パスに保存する |
 | `_load_layout_json` | なし | `LayoutJSON` | パッケージ同梱の `resources/default_layout.json` を読み込み `LayoutJSON` オブジェクトを生成する |
-| `_select_layout` | `content: SlideContent` | `str` | `SlideContent` の区切り種別・コンテンツ内容を元に `QMD_TO_PPTX_DESIGN.md` 4.8節のレイアウト自動選択ルールを適用してレイアウト名を返す |
+| `_select_layout` | `content: SlideContent`, `nodes: list[DOMNodeInfo]` | `str` | `SlideContent` の区切り種別と `nodes` 内のノード構成（`.columns` divの有無・テキスト/非テキストの混在）を元に `QMD_TO_PPTX_DESIGN.md` 4.8節のレイアウト自動選択ルールを適用してレイアウト名を返す |
 | `_resolve_placeholder` | `slide`, `idx: int` | `bool` | `slide.placeholders` に指定 `idx` が存在する場合は `True` を返す |
 | `_write_via_placeholder` | `slide`, `idx: int`, `element: Element` | `None` | `slide.placeholders[idx]` のテキストフレームに `element` のコンテンツを書き込む（パターンB・Dで使用） |
-| `_write_via_textbox` | `slide`, `role: str`, `layout_def: LayoutDef`, `element: Element` | `None` | `LayoutDef` の座標情報を使用して `add_textbox()` を呼び出し、`element` のコンテンツを配置する（パターンA・C・Dで使用） |
+| `_write_via_textbox` | `slide`, `role: str`, `layout_def: LayoutDef`, `element: Element` | `None` | `LayoutDef.placeholders` を `role` で線形探索して `PlaceholderInfo` の座標情報を取得し、`add_textbox()` を呼び出して `element` のコンテンツを配置する（パターンA・C・Dで使用） |
 
 **プレースホルダーパターン適用方針：**
 
@@ -535,18 +535,19 @@ flowchart TD
     K --> M
     L --> M[タイトルスライドを追加]
     M --> N[各 SlideContent をループ処理]
-    N --> O[_select_layout でレイアウト名を決定]
-    O --> P[MarkdownParser.parse でDOMツリーを生成]
-    P --> Q[DOMTraverser.traverse でノードをイテレート]
-    Q --> R{DOMNodeInfo.node_type}
+    N --> P[MarkdownParser.parse でDOMツリーを生成]
+    P --> Q[DOMTraverser.traverse でノードリストを収集]
+    Q --> O[_select_layout でレイアウト名を決定]
+    O --> X[スライドをプレゼンテーションに追加]
+    X --> R{各 DOMNodeInfo をイテレート}
     R -- テキスト系 --> S[TextRenderer で処理]
     R -- MERMAID --> T[MermaidRenderer で処理]
     R -- 数式 --> U[FormulaRenderer で処理]
     S --> V[次のノードへ]
     T --> V
     U --> V
-    V --> Q
-    Q -- イテレート終了 --> N
+    V --> R
+    R -- イテレート終了 --> N
     N -- ループ終了 --> W[Presentation を output パスに保存]
 ```
 
