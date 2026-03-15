@@ -222,9 +222,9 @@ class BaseDiagramRenderer:
             sx, sy = self._pos_to_emu(sx_norm, sy_norm, left, top, width, height)
             dx, dy = self._pos_to_emu(dx_norm, dy_norm, left, top, width, height)
 
-            # 直線コネクターを追加する（connector_type=1 = STRAIGHT）
+            # 曲線コネクターを追加する（connector_type=3 = CURVE）
             connector = slide.shapes.add_connector(
-                1,  # MSO_CONNECTOR_TYPE.STRAIGHT
+                3,  # MSO_CONNECTOR_TYPE.CURVE
                 Emu(sx),
                 Emu(sy),
                 Emu(dx),

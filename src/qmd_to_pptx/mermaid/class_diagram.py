@@ -296,7 +296,7 @@ class ClassDiagramRenderer(BaseDiagramRenderer):
             dx, dy = self._pos_to_emu(dx_norm, dy_norm, left, top, width, height)
 
             connector = slide.shapes.add_connector(
-                1,  # MSO_CONNECTOR_TYPE.STRAIGHT
+                3,  # MSO_CONNECTOR_TYPE.CURVE
                 Emu(sx), Emu(sy), Emu(dx), Emu(dy),
             )
 
