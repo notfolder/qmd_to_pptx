@@ -60,6 +60,33 @@ def _make_graph_data(
     return {"nodes": nodes, "edges": edges or []}
 
 
+def _collect_all_texts(slide) -> list[str]:
+    """
+    スライド内の全テキストを収集する。
+
+    GroupShape 内の子シェイプも再帰的に探索し、
+    ラベルテキストボックスがグループ内に移動されていなシェイプも見つける。
+    """
+    results: list[str] = []
+
+    def _recurse(shapes) -> None:
+        for sp in shapes:
+            try:
+                t = sp.text_frame.text.strip()
+                if t:
+                    results.append(t)
+            except AttributeError:
+                pass
+            # GroupShape の場合は子シェイプを再帰的に探索する
+            try:
+                _recurse(sp.shapes)
+            except AttributeError:
+                pass
+
+    _recurse(slide.shapes)
+    return results
+
+
 def _make_mermaid_element(text: str) -> ET.Element:
     """テスト用 Mermaid code 要素を生成する。"""
     elem = ET.Element("code")
@@ -293,7 +320,7 @@ class TestTransitionLabels:
         self.renderer = StateDiagramRenderer()
 
     def test_edge_with_label_adds_extra_textbox(self) -> None:
-        """label 付きエッジはコネクター以外にテキストボックスを追加する。"""
+        """label 付きエッジは遷移ラベルテキストをスライドに追加する。"""
         slide = _make_slide()
         graph_data_no_label = _make_graph_data(
             nodes=[
@@ -303,7 +330,7 @@ class TestTransitionLabels:
             edges=[{"start": "A", "end": "B", "label": ""}],
         )
         self.renderer.render(slide, graph_data_no_label, _L, _T, _W, _H)
-        count_no_label = len(slide.shapes)
+        texts_no_label = _collect_all_texts(slide)
 
         slide2 = _make_slide()
         graph_data_with_label = _make_graph_data(
@@ -314,14 +341,18 @@ class TestTransitionLabels:
             edges=[{"start": "A", "end": "B", "label": "イベント発生"}],
         )
         self.renderer.render(slide2, graph_data_with_label, _L, _T, _W, _H)
-        count_with_label = len(slide2.shapes)
+        texts_with_label = _collect_all_texts(slide2)
 
-        assert count_with_label > count_no_label, (
-            "ラベル付きエッジでシェイプが追加されていない"
+        # ラベル付きの場合はラベルテキストがスライド内（グループ内含む）に現れる
+        assert any("イベント発生" in t for t in texts_with_label), (
+            f"ラベル 'イベント発生' が見つからない: {texts_with_label}"
+        )
+        assert not any("イベント発生" in t for t in texts_no_label), (
+            f"ラベルなしの場合にラベルテキストが現れた: {texts_no_label}"
         )
 
     def test_transition_label_text_appears_in_shapes(self) -> None:
-        """遷移ラベルのテキストがスライドのシェイプに現れる。"""
+        """遷移ラベルのテキストがスライドのシェイプ（グループ内含む）に現れる。"""
         slide = _make_slide()
         graph_data = _make_graph_data(
             nodes=[
@@ -332,14 +363,7 @@ class TestTransitionLabels:
         )
         self.renderer.render(slide, graph_data, _L, _T, _W, _H)
 
-        all_texts = []
-        for shape in slide.shapes:
-            try:
-                t = shape.text_frame.text.strip()
-                if t:
-                    all_texts.append(t)
-            except AttributeError:
-                pass
+        all_texts = _collect_all_texts(slide)
         assert any("スタート" in t for t in all_texts), (
             f"遷移ラベル 'スタート' がシェイプに見つからない: {all_texts}"
         )
@@ -360,14 +384,7 @@ class TestTransitionLabels:
         )
         self.renderer.render(slide, graph_data, _L, _T, _W, _H)
 
-        all_texts = []
-        for shape in slide.shapes:
-            try:
-                t = shape.text_frame.text.strip()
-                if t:
-                    all_texts.append(t)
-            except AttributeError:
-                pass
+        all_texts = _collect_all_texts(slide)
         assert any("go" in t for t in all_texts), "ラベル 'go' が見つからない"
         assert any("next" in t for t in all_texts), "ラベル 'next' が見つからない"
 

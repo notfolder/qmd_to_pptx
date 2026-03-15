@@ -78,7 +78,6 @@ _DIVIDER_BG = RGBColor(230, 240, 255)         # 並行区画背景: 複合状態
 _CHOICE_BG = RGBColor(255, 250, 210)          # choice 背景: 薄い黄
 _CHOICE_BORDER = RGBColor(180, 140, 0)        # choice 枠: 黄茶
 _FORK_COLOR = RGBColor(30, 30, 30)            # fork/join バー: ほぼ黒
-_LABEL_FG = RGBColor(50, 50, 50)              # 遷移ラベル文字色
 _NOTE_BG = RGBColor(255, 253, 200)            # ノート背景: 薄い黄色
 _NOTE_BORDER = RGBColor(160, 140, 60)         # ノート枠: 黄茶
 
@@ -887,7 +886,8 @@ class StateDiagramRenderer(BaseDiagramRenderer):
         """
         遷移（エッジ）を曲線コネクター（curvedConnector3）で描画する。
 
-        ラベルが設定されている場合はコネクター中点近くにテキストボックスを追加する。
+        ラベルが設定されている場合は始点ブロックの枠上にテキストボックスを配置し、
+        始点ノードシェイプとグループ化する（フローチャートと同じ方式）。
 
         Parameters
         ----------
@@ -900,6 +900,9 @@ class StateDiagramRenderer(BaseDiagramRenderer):
         shape_map : dict[str, object]
             ノードIDをキー、Shapeオブジェクトを値とする辞書。
         """
+        # 始点ノードID → ラベルテキストボックスのリスト（ループ後にグループ化する）
+        node_label_map: dict[str, list] = {}
+
         for edge in raw_edges:
             if not isinstance(edge, dict):
                 continue
@@ -934,10 +937,22 @@ class StateDiagramRenderer(BaseDiagramRenderer):
             # 矢印スタイル（headEnd: arrow）を設定する
             self._apply_arrow_to_connector(connector)
 
-            # 遷移ラベルをコネクター中点付近に配置する
+            # 遷移ラベルがある場合は始点ブロックの枠上に配置してマップに登録する
             label = edge.get("label", "")
             if label:
-                self._add_transition_label(slide, label, sx, sy, dx, dy)
+                txBox = self._add_edge_label_near_source(
+                    slide, label, sx, sy, dx, dy
+                )
+                if src not in node_label_map:
+                    node_label_map[src] = []
+                node_label_map[src].append(txBox)
+
+        # ラベルテキストボックスを始点ノードとグループ化する。
+        # コネクターはトップレベルに残すことで begin_connect/end_connect の接続が維持される。
+        for node_id, txboxes in node_label_map.items():
+            src_shape = shape_map.get(node_id)
+            if src_shape is not None:
+                self._group_node_with_labels(slide, src_shape, txboxes)
 
     def _apply_arrow_to_connector(self, connector: object) -> None:
         """
@@ -959,46 +974,3 @@ class StateDiagramRenderer(BaseDiagramRenderer):
         head.set("type", "arrow")
         head.set("w", "med")
         head.set("len", "med")
-
-    def _add_transition_label(
-        self,
-        slide: Slide,
-        label: str,
-        sx: int,
-        sy: int,
-        dx: int,
-        dy: int,
-    ) -> None:
-        """
-        遷移ラベルをコネクター中点近くにテキストボックスで追加する。
-
-        Parameters
-        ----------
-        slide : Slide
-            描画対象スライド。
-        label : str
-            ラベルテキスト。
-        sx, sy : int
-            コネクター始点の EMU 座標。
-        dx, dy : int
-            コネクター終点の EMU 座標。
-        """
-        mx = (sx + dx) // 2
-        my = (sy + dy) // 2
-        tb_w = 1_000_000
-        tb_h = 300_000
-        tb_left = mx - tb_w // 2
-        tb_top = my - tb_h // 2
-
-        txbox = slide.shapes.add_textbox(
-            Emu(tb_left), Emu(tb_top), Emu(tb_w), Emu(tb_h)
-        )
-        tf = txbox.text_frame
-        tf.word_wrap = False
-        para = tf.paragraphs[0]
-        para.alignment = PP_ALIGN.CENTER
-        run = para.add_run()
-        run.text = label
-        run.font.size = Pt(9)
-        run.font.italic = True
-        run.font.color.rgb = _LABEL_FG

@@ -6,6 +6,8 @@ Mermaid図レンダラーの基底クラスモジュール。
 
 from __future__ import annotations
 
+import math
+
 from lxml import etree as lxml_etree
 from pptx.oxml.ns import qn
 from pptx.slide import Slide
@@ -282,3 +284,180 @@ class BaseDiagramRenderer:
         run.text = mermaid_text
         run.font.name = "Courier New"
         run.font.size = Pt(10)
+
+    def _add_edge_label_near_source(
+        self,
+        slide: Slide,
+        text: str,
+        sx: int,
+        sy: int,
+        dx: int,
+        dy: int,
+        font_size_pt: int = 10,
+    ) -> object:
+        """
+        エッジラベルを始点ノードの枠線上に中心が来るよう配置する。
+
+        始点から終点方向へのベクトルとノード矩形の交点（= 枠線上）を計算し、
+        そこを中心とした背景・枠線なしのテキストボックスを追加する。
+        コネクター中点固定方式と異なり、始点ブロックの枠に沿ってラベルを表示できる。
+
+        Parameters
+        ----------
+        slide : Slide
+            描画対象スライド。
+        text : str
+            ラベルテキスト。
+        sx, sy : int
+            始点ノード中心の EMU 座標。
+        dx, dy : int
+            終点ノード中心の EMU 座標。
+        font_size_pt : int
+            フォントサイズ（ポイント）。デフォルト 10pt。
+
+        Returns
+        -------
+        object
+            追加したテキストボックス Shape。
+        """
+        vec_x = dx - sx
+        vec_y = dy - sy
+        length = math.sqrt(vec_x ** 2 + vec_y ** 2)
+
+        if length < 1:
+            # コネクターが極端に短い場合は始点に配置する
+            label_cx = sx
+            label_cy = sy
+        else:
+            ux = vec_x / length
+            uy = vec_y / length
+            # 方向ベクトルとノード矩形の交点を求める（= 始点ノードの枠線上の点）
+            half_w = NODE_WIDTH_EMU / 2
+            half_h = NODE_HEIGHT_EMU / 2
+            if abs(ux) < 1e-9:
+                t = half_h
+            elif abs(uy) < 1e-9:
+                t = half_w
+            else:
+                t = min(half_w / abs(ux), half_h / abs(uy))
+            label_cx = sx + int(ux * t)
+            label_cy = sy + int(uy * t)
+
+        box_w = NODE_WIDTH_EMU
+        box_h = NODE_HEIGHT_EMU // 2
+        box_left = label_cx - box_w // 2
+        box_top = label_cy - box_h // 2
+
+        txBox = slide.shapes.add_textbox(
+            Emu(box_left), Emu(box_top), Emu(box_w), Emu(box_h)
+        )
+        tf = txBox.text_frame
+        tf.word_wrap = False
+        tf.text = text
+        for para in tf.paragraphs:
+            para.alignment = None  # 左揃え
+            for run in para.runs:
+                run.font.size = Pt(font_size_pt)
+                run.font.bold = False
+
+        # 背景と枠線を透明にする
+        txBox.fill.background()
+        spPr_el = txBox._element.find(qn("p:spPr"))
+        if spPr_el is not None:
+            existing_ln = spPr_el.find(qn("a:ln"))
+            if existing_ln is None:
+                existing_ln = lxml_etree.SubElement(spPr_el, qn("a:ln"))
+            lxml_etree.SubElement(existing_ln, qn("a:noFill"))
+
+        return txBox
+
+    def _group_node_with_labels(
+        self,
+        slide: Slide,
+        node_shape: object,
+        txboxes: list,
+    ) -> None:
+        """
+        始点ノードシェイプとラベルテキストボックス群をグループ化する。
+
+        コネクターはトップレベルに残し、begin_connect/end_connect で設定された
+        接続（シェイプIDによる参照）をそのまま維持する。
+        ノードシェイプをグループ内に移動してもシェイプIDは保持されるため、
+        PowerPoint はグループ内シェイプへの接続を正しく解決できる。
+        1つのノードに複数のラベル付きエッジがある場合も1グループにまとめる。
+
+        Parameters
+        ----------
+        slide : Slide
+            python-pptx の Slide オブジェクト。
+        node_shape : object
+            グループ化対象の始点ノード Shape オブジェクト。
+        txboxes : list
+            グループ化対象のラベルテキストボックス Shape オブジェクトのリスト。
+        """
+        spTree = slide.shapes._spTree
+        node_el = node_shape._element
+        txb_els = [tb._element for tb in txboxes]
+
+        def _get_xywh(el: object) -> tuple[int, int, int, int]:
+            """spPr/xfrm から left, top, cx, cy を取得する。"""
+            spPr = el.find(qn("p:spPr"))
+            if spPr is None:
+                return 0, 0, 0, 0
+            xfrm = spPr.find(qn("a:xfrm"))
+            if xfrm is None:
+                return 0, 0, 0, 0
+            off = xfrm.find(qn("a:off"))
+            ext = xfrm.find(qn("a:ext"))
+            if off is None or ext is None:
+                return 0, 0, 0, 0
+            return (
+                int(off.get("x", 0)),
+                int(off.get("y", 0)),
+                int(ext.get("cx", 0)),
+                int(ext.get("cy", 0)),
+            )
+
+        # 全要素のバウンディングボックスを計算する
+        all_els = [node_el] + txb_els
+        lefts, tops, rights, bottoms = [], [], [], []
+        for el in all_els:
+            l, t, w, h = _get_xywh(el)
+            lefts.append(l)
+            tops.append(t)
+            rights.append(l + w)
+            bottoms.append(t + h)
+
+        grp_left = min(lefts)
+        grp_top = min(tops)
+        grp_w = max(1, max(rights) - grp_left)
+        grp_h = max(1, max(bottoms) - grp_top)
+
+        # <p:grpSp> 要素を構築する
+        grpSp = lxml_etree.Element(qn("p:grpSp"))
+        grpSpPr = lxml_etree.SubElement(grpSp, qn("p:grpSpPr"))
+        xfrm = lxml_etree.SubElement(grpSpPr, qn("a:xfrm"))
+        off_el = lxml_etree.SubElement(xfrm, qn("a:off"))
+        off_el.set("x", str(grp_left))
+        off_el.set("y", str(grp_top))
+        ext_el = lxml_etree.SubElement(xfrm, qn("a:ext"))
+        ext_el.set("cx", str(grp_w))
+        ext_el.set("cy", str(grp_h))
+        # 子座標系をスライド座標系と同一（恒等変換）にして絶対座標をそのまま保持する
+        chOff = lxml_etree.SubElement(xfrm, qn("a:chOff"))
+        chOff.set("x", str(grp_left))
+        chOff.set("y", str(grp_top))
+        chExt = lxml_etree.SubElement(xfrm, qn("a:chExt"))
+        chExt.set("cx", str(grp_w))
+        chExt.set("cy", str(grp_h))
+
+        # spTree からシェイプを取り出して grpSp に移動する
+        spTree.remove(node_el)
+        for txb_el in txb_els:
+            spTree.remove(txb_el)
+        grpSp.append(node_el)
+        for txb_el in txb_els:
+            grpSp.append(txb_el)
+
+        # grpSp を spTree に追加する
+        spTree.append(grpSp)
