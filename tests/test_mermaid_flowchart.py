@@ -159,7 +159,8 @@ class TestFlowchartRenderer:
         assert added == 2
 
     def test_render_edge_with_label_sets_connector_label(self) -> None:
-        """ラベル付きエッジがコネクター自体にラベルを設定することを確認する。"""
+        """ラベル付きエッジが始点近くにテキストボックスとして配置され、
+        コネクターとグループ化されることを確認する。"""
         slide = _make_slide()
         initial = len(slide.shapes)
         graph_data = self._make_graph_data(
@@ -167,8 +168,16 @@ class TestFlowchartRenderer:
             edges=[{"start": "A", "end": "B", "stroke": "normal", "type": "arrow_point", "text": "条件"}],
         )
         self.renderer.render(slide, graph_data, "", Emu(0), Emu(0), Emu(9000000), Emu(5000000))
-        # 2ノード + 1コネクター（コネクターXMLにラベル埋め込み）= 3追加
+        # 2ノード（個別） + 1グループ（コネクター + ラベルテキストボックス） = 3追加
         assert len(slide.shapes) == initial + 3
+        # グループ内にラベルテキスト「条件」が含まれることを確認する
+        from pptx.oxml.ns import qn as _qn
+        spTree = slide.shapes._spTree
+        grp_texts = []
+        for grpSp in spTree.findall(_qn("p:grpSp")):
+            for t_el in grpSp.iter(_qn("a:t")):
+                grp_texts.append(t_el.text or "")
+        assert any("条件" in t for t in grp_texts), f"グループ内にラベルが見つからない: {grp_texts}"
 
     def test_render_fallback_on_empty_vertices(self) -> None:
         """vertices が空の場合はフォールバック（テキストボックス）が追加される。"""
