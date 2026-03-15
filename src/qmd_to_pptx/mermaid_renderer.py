@@ -10,8 +10,10 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 
 import networkx as nx
+from lxml import etree as lxml_etree
 from mermaid_parser import MermaidParser
 from pptx.enum.text import PP_ALIGN
+from pptx.oxml.ns import qn
 from pptx.slide import Slide
 from pptx.util import Emu, Pt
 
@@ -488,7 +490,8 @@ class MermaidRenderer:
             anchor = self._draw_class_box(slide, node_id, classes[node_id], cx, cy)
             node_shapes[node_id] = anchor
 
-        self._draw_edges(slide, edges, pos, node_shapes, left, top, width, height)
+        # UML矢印スタイルでエッジを描画する（relations リストそのままを渡す）
+        self._draw_edges_class(slide, relations, pos, node_shapes, left, top, width, height)
 
     def _class_total_height(self, class_data: dict) -> int:
         """
@@ -623,7 +626,152 @@ class MermaidRenderer:
                 run.text = raw
                 run.font.size = Pt(9)
 
+        # 3つのShapeをグループ化する
+        # グループ内でもshapeのIDは保持されるためコネクターの接続ポイントに使用可能
+        slide.shapes.add_group_shape([header_shape, attrs_shape, methods_shape])
+
         return header_shape
+
+    def _draw_edges_class(
+        self,
+        slide: Slide,
+        relations: list[dict],
+        pos: dict[str, tuple[float, float]],
+        node_shapes: dict[str, object],
+        left: int,
+        top: int,
+        width: int,
+        height: int,
+    ) -> None:
+        """
+        classDiagram のエッジをUML矢印スタイルで描画する。
+
+        mermaid-parser-py の relationType に応じて以下の矢印を設定する。
+        - EXTENSION(1)  : 三角矢印（継承・コネクター始点/終点側に応じて tailEnd/headEnd）
+        - COMPOSITION(2): ひし形（コンポジション、大サイズ）
+        - AGGREGATION(0): ひし形（集約、中サイズ）
+        - DEPENDENCY(3) : 開放矢印（依存）
+        lineType=1 の場合は点線コネクターとして描画する。
+
+        Parameters
+        ----------
+        slide : Slide
+            python-pptxのSlideオブジェクト。
+        relations : list[dict]
+            mermaid-parser-py の relations リスト。各要素に id1, id2, relation キーを持つ。
+        pos : dict[str, tuple[float, float]]
+            ノードIDをキー、spring_layout 正規化座標を値とする辞書。
+        node_shapes : dict[str, object]
+            ノードIDをキー、Shapeオブジェクトを値とする辞書。
+        left, top, width, height : int
+            描画エリアのEMU座標。
+        """
+        # mermaid-parser-py の relationType 定数
+        _AGGREGATION = 0
+        _EXTENSION   = 1
+        _COMPOSITION = 2
+        _DEPENDENCY  = 3
+
+        for rel in relations:
+            src = rel.get("id1")
+            dst = rel.get("id2")
+            if not src or not dst:
+                continue
+            if src not in pos or dst not in pos:
+                continue
+
+            relation = rel.get("relation", {})
+            type1 = relation.get("type1", "none")   # id1(src)側の関係種別
+            type2 = relation.get("type2", "none")   # id2(dst)側の関係種別
+            line_type = relation.get("lineType", 0)  # 0=実線, 1=点線
+
+            sx_norm, sy_norm = pos[src]
+            dx_norm, dy_norm = pos[dst]
+            sx, sy = self._pos_to_emu(sx_norm, sy_norm, left, top, width, height)
+            dx, dy = self._pos_to_emu(dx_norm, dy_norm, left, top, width, height)
+
+            connector = slide.shapes.add_connector(
+                1,  # MSO_CONNECTOR_TYPE.STRAIGHT
+                Emu(sx), Emu(sy), Emu(dx), Emu(dy),
+            )
+
+            src_cp, dst_cp = self._connection_indices(dx_norm - sx_norm, dy_norm - sy_norm)
+            src_shape = node_shapes.get(src)
+            dst_shape = node_shapes.get(dst)
+            if src_shape is not None:
+                connector.begin_connect(src_shape, src_cp)
+            if dst_shape is not None:
+                connector.end_connect(dst_shape, dst_cp)
+
+            # コネクター内の <p:spPr> から <a:ln> を取得または作成する
+            cxn_el = connector._element
+            spPr = cxn_el.find(qn("p:spPr"))
+            if spPr is None:
+                continue
+            ln = spPr.find(qn("a:ln"))
+            if ln is None:
+                ln = lxml_etree.SubElement(spPr, qn("a:ln"))
+
+            # 点線スタイル（lineType=1）: <a:prstDash val="dash"/>
+            if line_type == 1:
+                prstDash = ln.find(qn("a:prstDash"))
+                if prstDash is None:
+                    prstDash = lxml_etree.SubElement(ln, qn("a:prstDash"))
+                prstDash.set("val", "dash")
+
+            # headEnd: コネクター終点（end_connect=dst=id2）側の矢印
+            # type1=EXTENSION は id1(src) 側に三角なので headEnd には現れない
+            # type2 側の矢印種別を headEnd に設定する
+            if type2 == _EXTENSION:
+                # id2側に三角（継承・逆方向）
+                head = lxml_etree.SubElement(ln, qn("a:headEnd"))
+                head.set("type", "triangle")
+                head.set("w", "lg")
+                head.set("len", "lg")
+            elif type2 == _DEPENDENCY:
+                # id2側に開放矢印（依存）
+                head = lxml_etree.SubElement(ln, qn("a:headEnd"))
+                head.set("type", "arrow")
+                head.set("w", "med")
+                head.set("len", "med")
+            elif type2 == _COMPOSITION:
+                # id2側にひし形（コンポジション逆方向）
+                head = lxml_etree.SubElement(ln, qn("a:headEnd"))
+                head.set("type", "diamond")
+                head.set("w", "lg")
+                head.set("len", "lg")
+            elif type2 == _AGGREGATION:
+                # id2側にひし形（集約逆方向）
+                head = lxml_etree.SubElement(ln, qn("a:headEnd"))
+                head.set("type", "diamond")
+                head.set("w", "med")
+                head.set("len", "med")
+
+            # tailEnd: コネクター始点（begin_connect=src=id1）側の矢印
+            if type1 == _EXTENSION:
+                # id1側に三角（継承: id1=親クラス、三角が親側に付く）
+                tail = lxml_etree.SubElement(ln, qn("a:tailEnd"))
+                tail.set("type", "triangle")
+                tail.set("w", "lg")
+                tail.set("len", "lg")
+            elif type1 == _COMPOSITION:
+                # id1側にひし形（コンポジション: 大サイズで塗りつぶし相当）
+                tail = lxml_etree.SubElement(ln, qn("a:tailEnd"))
+                tail.set("type", "diamond")
+                tail.set("w", "lg")
+                tail.set("len", "lg")
+            elif type1 == _AGGREGATION:
+                # id1側にひし形（集約: 中サイズ）
+                tail = lxml_etree.SubElement(ln, qn("a:tailEnd"))
+                tail.set("type", "diamond")
+                tail.set("w", "med")
+                tail.set("len", "med")
+            elif type1 == _DEPENDENCY:
+                # id1側に開放矢印（依存逆方向）
+                tail = lxml_etree.SubElement(ln, qn("a:tailEnd"))
+                tail.set("type", "arrow")
+                tail.set("w", "med")
+                tail.set("len", "med")
 
     def _render_er_diagram(
         self,
