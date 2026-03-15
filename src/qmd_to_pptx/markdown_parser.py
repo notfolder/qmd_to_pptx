@@ -107,9 +107,11 @@ class MarkdownParser:
             DOMツリーのルート要素（<div>）。
         """
         # Markdownをインスタンス化して変換する
+        # tab_length=2 でスペース2つインデントをネストリストとして認識させる
         md = markdown.Markdown(
             extensions=self._EXTENSIONS,
             extension_configs=self._extension_configs,
+            tab_length=2,
         )
         html_body = md.convert(text)
 

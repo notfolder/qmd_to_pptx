@@ -70,3 +70,28 @@ class TestMarkdownParser:
         """空文字列は空の div 要素を返す。"""
         root = self.parser.parse("")
         assert isinstance(root, ET.Element)
+
+    # --- リストネスト ---
+
+    def test_parse_nested_ul_2spaces(self) -> None:
+        """順序なしリストでスペース2つインデントがネスト <ul>構造として認識される。"""
+        md = "- 親アイテム\n  - 子アイテム"
+        root = self.parser.parse(md)
+        # 外側 ul の直下 li 内にネストされた ul が存在する
+        outer_ul = root.find(".//ul")
+        assert outer_ul is not None, "外側 <ul> が見つからない"
+        parent_li = outer_ul.find("li")
+        assert parent_li is not None, "<li> が見つからない"
+        nested_ul = parent_li.find(".//ul")
+        assert nested_ul is not None, "スペース2つインデントのネスト <ul> が生成されていない"
+
+    def test_parse_nested_ol_2spaces(self) -> None:
+        """順序リストでスペース2つインデントがネスト <ol>構造として認識される。"""
+        md = "1. 親アイテム\n  1. 子アイテム"
+        root = self.parser.parse(md)
+        outer_ol = root.find(".//ol")
+        assert outer_ol is not None, "外側 <ol> が見つからない"
+        parent_li = outer_ol.find("li")
+        assert parent_li is not None, "<li> が見つからない"
+        nested_ol = parent_li.find(".//ol")
+        assert nested_ol is not None, "スペース2つインデントのネスト <ol> が生成されていない"

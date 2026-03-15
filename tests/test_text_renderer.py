@@ -134,6 +134,26 @@ class TestTextRenderer:
         bu_none = pPr.find(f"{{{_A_NS}}}buNone")
         assert bu_none is not None, "buNone が pPr に設定されていない"
 
+    def test_render_code_multiline_uses_br(self) -> None:
+        """複数行コードは <a:br> ソフト改行で同一段落内に結合される。"""
+        _A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+        slide, _ = _make_slide()
+        shape = _make_textbox(slide)
+        elem = ET.Element("code")
+        elem.text = "x = 1\ny = 2\nz = 3"
+        self.renderer.render_code(shape, elem)
+        tf = shape.text_frame
+        # 複数行でも段落は1つのまま（分割されない）
+        assert len(tf.paragraphs) == 1
+        p_elem = tf.paragraphs[0]._p
+        # <a:br> が2つ挿入されている（。3行=改行2つ）
+        br_elements = p_elem.findall(f"{{{_A_NS}}}br")
+        assert len(br_elements) == 2, f"<a:br> 数が期待値。2ではなく{len(br_elements)}"
+        # buNone が段落に設定されている
+        pPr = p_elem.find(f"{{{_A_NS}}}pPr")
+        assert pPr is not None
+        assert pPr.find(f"{{{_A_NS}}}buNone") is not None
+
     # --- render_table のテスト ---
 
     def test_render_table(self) -> None:

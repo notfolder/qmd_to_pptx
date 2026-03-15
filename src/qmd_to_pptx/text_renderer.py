@@ -331,18 +331,16 @@ class TextRenderer:
         _A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
 
         text = "".join(element.itertext())
+        lines = text.split("\n")
         tf = shape.text_frame
         tf.clear()
         tf.word_wrap = False
         para = tf.paragraphs[0]
-        run = para.add_run()
-        run.text = text
-        run.font.name = self._MONOSPACE_FONT
-        run.font.size = Pt(14)
+        p_elem = para._p
 
         # コードブロックはbulletスタイルを無効化する（コンテンツプレースホルダーの
         # デフォルトbulletスタイルが引き継がれてしまうのを防ぐ）
-        p_elem = para._p
+        # buNone は段落レベルで1回設定すれば <a:br> ソフト改行後の行にも適用される
         pPr = p_elem.find(f"{{{_A_NS}}}pPr")
         if pPr is None:
             pPr = lxml_etree.Element(f"{{{_A_NS}}}pPr")
@@ -352,6 +350,33 @@ class TextRenderer:
             if old is not None:
                 pPr.remove(old)
         lxml_etree.SubElement(pPr, f"{{{_A_NS}}}buNone")
+
+        # 複数行を <a:br>（ソフト改行）で1段落内に結合する
+        # 段落を分割すると後続段落にbuNoneが引き継がれないため、同一段落内で改行する
+        def _make_run_elem(line_text: str) -> lxml_etree._Element:
+            """指定テキストを持つ <a:r> 要素を生成する。"""
+            r_elem = lxml_etree.SubElement(p_elem, f"{{{_A_NS}}}r")
+            rPr = lxml_etree.SubElement(r_elem, f"{{{_A_NS}}}rPr", attrib={"lang": "", "dirty": "0"})
+            t_elem = lxml_etree.SubElement(r_elem, f"{{{_A_NS}}}t")
+            t_elem.text = line_text
+            if line_text.startswith(" ") or line_text.endswith(" "):
+                # 前後スペースを保持するため xml:space="preserve" を設定する
+                t_elem.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+            return r_elem
+
+        for i, line in enumerate(lines):
+            if i > 0:
+                # 行間にソフト改行 <a:br> を挿入する
+                br_elem = lxml_etree.SubElement(p_elem, f"{{{_A_NS}}}br")
+                br_rPr = lxml_etree.SubElement(br_elem, f"{{{_A_NS}}}rPr", attrib={"lang": "", "dirty": "0"})
+                # フォント設定を <a:br> の rPr にも適用する
+                lxml_etree.SubElement(br_rPr, f"{{{_A_NS}}}latin", attrib={"typeface": self._MONOSPACE_FONT})
+            r_elem = _make_run_elem(line)
+            # run のフォント設定を rPr に反映する
+            rPr = r_elem.find(f"{{{_A_NS}}}rPr")
+            if rPr is not None:
+                rPr.set("sz", "1400")  # 14pt = 1400 hundredths of a point
+                lxml_etree.SubElement(rPr, f"{{{_A_NS}}}latin", attrib={"typeface": self._MONOSPACE_FONT})
 
     def render_notes(
         self,
