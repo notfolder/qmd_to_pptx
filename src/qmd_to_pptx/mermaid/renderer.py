@@ -1,0 +1,186 @@
+"""
+MermaidRendererファサードモジュール。
+
+各ダイアグラム種別レンダラーへ処理を委譲するファサードクラスを提供する。
+"""
+
+from __future__ import annotations
+
+import xml.etree.ElementTree as ET
+
+from mermaid_parser import MermaidParser
+from pptx.slide import Slide
+
+from .base import BaseDiagramRenderer
+from .class_diagram import ClassDiagramRenderer
+from .er_diagram import ErDiagramRenderer
+from .flowchart import FlowchartRenderer
+from .mindmap import MindmapRenderer
+from .state_diagram import StateDiagramRenderer
+
+
+class MermaidRenderer:
+    """
+    Mermaidレンダラーファサードクラス。
+
+    elementからMermaidテキストを取り出し、graph_typeに応じて
+    専用レンダラーへ処理を委譲する。
+    パース失敗時やサポート外ダイアグラム種別はフォールバック描画を行う。
+    """
+
+    def __init__(self) -> None:
+        """各ダイアグラム種別レンダラーのインスタンスを生成する。"""
+        self._flowchart = FlowchartRenderer()
+        self._class_diagram = ClassDiagramRenderer()
+        self._state_diagram = StateDiagramRenderer()
+        self._er_diagram = ErDiagramRenderer()
+        self._mindmap = MindmapRenderer()
+        # フォールバック描画は BaseDiagramRenderer に委ねる
+        self._base = BaseDiagramRenderer()
+
+    def render(
+        self,
+        slide: Slide,
+        element: ET.Element,
+        left: int,
+        top: int,
+        width: int,
+        height: int,
+    ) -> None:
+        """
+        elementからMermaidテキストを取り出し、スライドにグラフを描画する。
+
+        Parameters
+        ----------
+        slide : Slide
+            python-pptxのSlideオブジェクト。
+        element : ET.Element
+            Mermaidコード要素（code class="language-mermaid"）。
+        left : int
+            描画エリアの左端座標（EMU）。
+        top : int
+            描画エリアの上端座標（EMU）。
+        width : int
+            描画エリアの幅（EMU）。
+        height : int
+            描画エリアの高さ（EMU）。
+        """
+        mermaid_text = "".join(element.itertext()).strip()
+
+        # JSエンジンが対応していないダイアグラムタイプはパーサーを呼ばずフォールバックする
+        # これにより mermaid-parser-py の JS エンジンが stderr に出力するエラーを抑止する
+        _UNSUPPORTED_PREFIXES = (
+            "zenuml",
+        )
+        first_line = mermaid_text.splitlines()[0].strip().lower() if mermaid_text else ""
+        if any(first_line.startswith(p) for p in _UNSUPPORTED_PREFIXES):
+            self._base._render_fallback(slide, mermaid_text, left, top, width, height)
+            return
+
+        try:
+            # mermaid-parser-pyでノードとエッジを取得する
+            mp = MermaidParser()
+            result = mp.parse(mermaid_text)
+            graph_data = result.get("graph_data", {})
+            graph_type = result.get("graph_type", "")
+        except Exception:
+            # パース失敗時はテキストボックスにそのまま表示する
+            self._base._render_fallback(slide, mermaid_text, left, top, width, height)
+            return
+
+        # graph_typeに応じて専用レンダラーへ分岐する
+        if graph_type == "stateDiagram":
+            self._state_diagram.render(slide, graph_data, left, top, width, height)
+            return
+        if graph_type == "class":
+            self._class_diagram.render(slide, graph_data, left, top, width, height)
+            return
+        if graph_type == "er":
+            self._er_diagram.render(slide, graph_data, left, top, width, height)
+            return
+        if graph_type == "mindmap":
+            self._mindmap.render(slide, graph_data, left, top, width, height)
+            return
+
+        # flowchart / graph 系: FlowchartRenderer に委譲する
+        vertices = graph_data.get("vertices", {})
+        if not vertices:
+            self._base._render_fallback(slide, mermaid_text, left, top, width, height)
+            return
+
+        self._flowchart.render(slide, graph_data, mermaid_text, left, top, width, height)
+
+    # ------------------------------------------------------------------
+    # 後方互換メソッド（既存テスト・外部コードからの直接呼び出しに対応する）
+    # ------------------------------------------------------------------
+
+    def _extract_nodes(self, graph_data: dict) -> list[str]:
+        """
+        mermaid-parser-pyの解析結果からノードIDのリストを取得する（後方互換）。
+
+        Parameters
+        ----------
+        graph_data : dict
+            graph_data辞書（"vertices"キーにノード情報を含む）。
+
+        Returns
+        -------
+        list[str]
+            ノードIDのリスト。
+        """
+        vertices = graph_data.get("vertices", {})
+        if isinstance(vertices, dict):
+            return list(vertices.keys())
+        return []
+
+    def _extract_edges(self, graph_data: dict) -> list[tuple[str, str]]:
+        """
+        mermaid-parser-pyの解析結果からエッジのリストを取得する（後方互換）。
+
+        Parameters
+        ----------
+        graph_data : dict
+            graph_data辞書（"edges"キーにエッジ情報を含む）。
+
+        Returns
+        -------
+        list[tuple[str, str]]
+            (始点ノードID, 終点ノードID) のタプルリスト。
+        """
+        raw_edges = graph_data.get("edges", [])
+        edges: list[tuple[str, str]] = []
+        for edge in raw_edges:
+            if isinstance(edge, dict):
+                src = edge.get("start")
+                dst = edge.get("end")
+                if src is not None and dst is not None:
+                    edges.append((str(src), str(dst)))
+        return edges
+
+    def _pos_to_emu(
+        self,
+        x_norm: float,
+        y_norm: float,
+        left: int,
+        top: int,
+        width: int,
+        height: int,
+    ) -> tuple[int, int]:
+        """
+        正規化座標（-1.0〜1.0）をEMU座標に変換する（後方互換）。
+
+        Parameters
+        ----------
+        x_norm : float
+            正規化X座標（-1.0〜1.0）。
+        y_norm : float
+            正規化Y座標（-1.0〜1.0）。
+        left, top, width, height : int
+            描画エリアのEMU座標。
+
+        Returns
+        -------
+        tuple[int, int]
+            (x_emu, y_emu) のタプル。
+        """
+        return self._base._pos_to_emu(x_norm, y_norm, left, top, width, height)

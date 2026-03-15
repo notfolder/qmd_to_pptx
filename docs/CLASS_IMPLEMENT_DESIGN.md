@@ -25,9 +25,18 @@ qmd_to_pptx/（リポジトリルート）
         ├── dom_traverser.py
         ├── slide_renderer.py
         ├── text_renderer.py
-        ├── mermaid_renderer.py
+        ├── mermaid_renderer.py       ← 後方互換のre-exportのみ
         ├── formula_renderer.py
         ├── mcp_server.py
+        ├── mermaid/                  ← Mermaidレンダラーサブパッケージ
+        │   ├── __init__.py
+        │   ├── renderer.py           ← MermaidRenderer（ファサード）
+        │   ├── base.py               ← BaseDiagramRenderer（共通ユーティリティ）
+        │   ├── flowchart.py          ← FlowchartRenderer
+        │   ├── class_diagram.py      ← ClassDiagramRenderer
+        │   ├── state_diagram.py      ← StateDiagramRenderer
+        │   ├── er_diagram.py         ← ErDiagramRenderer
+        │   └── mindmap.py            ← MindmapRenderer
         └── resources/
             └── default_layout.json
 ```
@@ -49,9 +58,17 @@ qmd_to_pptx/（リポジトリルート）
 | `src/qmd_to_pptx/dom_traverser.py` | DOMトラバーサークラス `DOMTraverser` を定義する |
 | `src/qmd_to_pptx/slide_renderer.py` | スライドレンダラークラス `SlideRenderer` を定義する。各コンポーネントを呼び出す中心的なオーケストレーター |
 | `src/qmd_to_pptx/text_renderer.py` | テキストレンダラークラス `TextRenderer` を定義する |
-| `src/qmd_to_pptx/mermaid_renderer.py` | Mermaidレンダラークラス `MermaidRenderer` を定義する |
+| `src/qmd_to_pptx/mermaid_renderer.py` | 後方互換のための再エクスポートモジュール。`qmd_to_pptx.mermaid.MermaidRenderer` を再エクスポートする |
 | `src/qmd_to_pptx/formula_renderer.py` | 数式レンダラークラス `FormulaRenderer` を定義する |
 | `src/qmd_to_pptx/mcp_server.py` | MCPサーバーのエントリーポイント。`main()` 関数を `[project.scripts]` として公開する |
+| `src/qmd_to_pptx/mermaid/__init__.py` | mermaidサブパッケージのエントリーポイント。`MermaidRenderer` を公開する |
+| `src/qmd_to_pptx/mermaid/renderer.py` | `MermaidRenderer` ファサードクラス。ダイアグラム種別ごとに専用レンダラーへ委譲する |
+| `src/qmd_to_pptx/mermaid/base.py` | `BaseDiagramRenderer` 基底クラス。座標変換・ノード描画・エッジ描画・フォールバックの共通ロジックを提供する |
+| `src/qmd_to_pptx/mermaid/flowchart.py` | `FlowchartRenderer`。14種類のノード形状・7種類のエッジ矢印・4種類の線種・エッジラベルに対応する |
+| `src/qmd_to_pptx/mermaid/class_diagram.py` | `ClassDiagramRenderer`。UMLクラス図形式（3段ボックス・UML矢印8種類）で描画する |
+| `src/qmd_to_pptx/mermaid/state_diagram.py` | `StateDiagramRenderer`。stateDiagram-v2を描画する |
+| `src/qmd_to_pptx/mermaid/er_diagram.py` | `ErDiagramRenderer`。erDiagramを描画する |
+| `src/qmd_to_pptx/mermaid/mindmap.py` | `MindmapRenderer`。マインドマップをツリーレイアウトで描画する |
 | `src/qmd_to_pptx/resources/default_layout.json` | スライドレイアウト座標定義JSON。パッケージデータとして同梱される |
 
 ---
@@ -114,7 +131,13 @@ qmd_to_pptx/（リポジトリルート）
 | `MarkdownParser` | `markdown_parser.py` | Markdownパーサー（4.3節） |
 | `DOMTraverser` | `dom_traverser.py` | DOMトラバーサー（4.4節） |
 | `TextRenderer` | `text_renderer.py` | テキストレンダラー（4.5節） |
-| `MermaidRenderer` | `mermaid_renderer.py` | Mermaidレンダラー（4.6節） |
+| `MermaidRenderer` | `mermaid/renderer.py` | Mermaidレンダラー（4.6節）ファサード |
+| `BaseDiagramRenderer` | `mermaid/base.py` | Mermaidレンダラー（4.6節）基底クラス |
+| `FlowchartRenderer` | `mermaid/flowchart.py` | Mermaidレンダラー（4.6節）フローチャート |
+| `ClassDiagramRenderer` | `mermaid/class_diagram.py` | Mermaidレンダラー（4.6節）クラス図 |
+| `StateDiagramRenderer` | `mermaid/state_diagram.py` | Mermaidレンダラー（4.6節）状態図 |
+| `ErDiagramRenderer` | `mermaid/er_diagram.py` | Mermaidレンダラー（4.6節）ER図 |
+| `MindmapRenderer` | `mermaid/mindmap.py` | Mermaidレンダラー（4.6節）マインドマップ |
 | `FormulaRenderer` | `formula_renderer.py` | 数式レンダラー（4.7節） |
 | `SlideRenderer` | `slide_renderer.py` | スライドレンダラー（4.8節） |
 
