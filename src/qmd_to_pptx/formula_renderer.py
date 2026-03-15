@@ -50,8 +50,13 @@ class FormulaRenderer:
             omml_elem = etree.fromstring(omml_bytes)
 
             # a14:m 要素でOMMLをラップする（PowerPointのインライン数式構造）
+            # nsmap で a14 と m のプレフィックスを明示指定して ns0 が生成されるのを防ぐ
             A14_NS = "http://schemas.microsoft.com/office/drawing/2010/main"
-            a14_m = etree.Element(f"{{{A14_NS}}}m")
+            OMML_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"
+            a14_m = etree.Element(
+                f"{{{A14_NS}}}m",
+                nsmap={"a14": A14_NS, "m": OMML_NS},
+            )
             a14_m.append(omml_elem)
 
             # runの後にa14:mを挿入する
@@ -109,9 +114,15 @@ class FormulaRenderer:
             p_elem = para._p  # lxml element
 
             # a14:m 要素を作成してOMML要素を追加する（PowerPointのブロック数式構造）
+            # nsmap で a14 と m のプレフィックスを明示指定して ns0 が生成されるのを防ぐ
             A14_NS = "http://schemas.microsoft.com/office/drawing/2010/main"
-            a14_m = etree.SubElement(p_elem, f"{{{A14_NS}}}m")
+            OMML_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"
+            a14_m = etree.Element(
+                f"{{{A14_NS}}}m",
+                nsmap={"a14": A14_NS, "m": OMML_NS},
+            )
             a14_m.append(omml_elem)
+            p_elem.append(a14_m)
         except Exception:
             # 変換失敗時はテキストボックスにLaTeXテキストを表示する
             shape = slide.shapes.add_textbox(
