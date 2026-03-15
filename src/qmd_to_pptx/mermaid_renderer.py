@@ -84,7 +84,7 @@ class MermaidRenderer:
 
         # 座標をEMUに変換してノードとエッジを描画する
         node_shapes = self._draw_nodes(slide, nodes, pos, left, top, width, height)
-        self._draw_edges(slide, edges, pos, left, top, width, height)
+        self._draw_edges(slide, edges, pos, node_shapes, left, top, width, height)
 
     def _extract_nodes(self, graph_data: dict) -> list[str]:
         """
@@ -237,18 +237,62 @@ class MermaidRenderer:
 
         return node_shapes
 
+    def _connection_indices(
+        self,
+        dx: float,
+        dy: float,
+    ) -> tuple[int, int]:
+        """
+        方向ベクトル (dx, dy) から始点・終点の接続ポイントインデックスを決定する。
+
+        DrawingML 標準矩形の接続ポイントは以下のとおり。
+        - 0: 上辺中点
+        - 1: 右辺中点
+        - 2: 下辺中点
+        - 3: 左辺中点
+
+        Parameters
+        ----------
+        dx : float
+            X方向の差（dst.x - src.x）。正規化座標系での値。
+        dy : float
+            Y方向の差（dst.y - src.y）。正規化座標系での値。
+
+        Returns
+        -------
+        tuple[int, int]
+            (始点接続ポイントインデックス, 終点接続ポイントインデックス)
+        """
+        if abs(dx) >= abs(dy):
+            # 水平方向が支配的な場合
+            if dx >= 0:
+                # 左から右: src右辺 → dst左辺
+                return (1, 3)
+            else:
+                # 右から左: src左辺 → dst右辺
+                return (3, 1)
+        else:
+            # 垂直方向が支配的な場合
+            if dy >= 0:
+                # 上から下: src下辺 → dst上辺
+                return (2, 0)
+            else:
+                # 下から上: src上辺 → dst下辺
+                return (0, 2)
+
     def _draw_edges(
         self,
         slide: Slide,
         edges: list[tuple[str, str]],
         pos: dict[str, tuple[float, float]],
+        node_shapes: dict[str, object],
         left: int,
         top: int,
         width: int,
         height: int,
     ) -> None:
         """
-        エッジをConnectorShapeとしてスライドに描画する。
+        エッジをConnectorShapeとしてスライドに描画し、始点・終点のshapeに接続する。
 
         Parameters
         ----------
@@ -258,6 +302,8 @@ class MermaidRenderer:
             (始点ノードID, 終点ノードID) のタプルリスト。
         pos : dict[str, tuple[float, float]]
             ノードIDをキー、正規化座標を値とする辞書。
+        node_shapes : dict[str, object]
+            ノードIDをキー、Shapeオブジェクトを値とする辞書。
         left : int
             描画エリアの左端座標（EMU）。
         top : int
@@ -283,6 +329,19 @@ class MermaidRenderer:
                 Emu(dx),
                 Emu(dy),
             )
+
+            # 接続ポイントインデックスを方向ベクトルから決定する
+            src_cp, dst_cp = self._connection_indices(
+                dx_norm - sx_norm, dy_norm - sy_norm
+            )
+
+            # shapeが存在する場合は begin_connect/end_connect でブロックに接続する
+            src_shape = node_shapes.get(src)
+            dst_shape = node_shapes.get(dst)
+            if src_shape is not None:
+                connector.begin_connect(src_shape, src_cp)
+            if dst_shape is not None:
+                connector.end_connect(dst_shape, dst_cp)
 
     def _render_fallback(
         self,
