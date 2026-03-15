@@ -111,25 +111,44 @@ gantt
         デプロイ :milestone, 2024-02-05, 1d
 ```
 
-## 4. クラス図（Class Diagram）
+## 4. クラス図（Class Diagram）- 全接続タイプ
 
 ```mermaid
 classDiagram
-    class Animal {
+    class Vehicle {
+        +String make
+        +drive() void
+    }
+    class Car {
+        +int doors
+        +honk() void
+    }
+    class Engine {
+        +int cylinders
+        +ignite() void
+    }
+    class Wheel {
+        +int size
+    }
+    class Driver {
         +String name
-        +int age
-        +makeSound() void
+        +operate() void
     }
-    class Dog {
-        +String breed
-        +fetch() void
+    class ILogger {
+        <<interface>>
+        +log() void
     }
-    class Cat {
-        +bool indoor
-        +purr() void
-    }
-    Animal <|-- Dog
-    Animal <|-- Cat
+    class Fuel
+    class GPS
+
+    Vehicle <|-- Car : Inheritance（継承）
+    Car *-- Engine : Composition（コンポジション）
+    Car o-- Wheel : Aggregation（集約）
+    Driver --> Car : Association（方向付き関連）
+    Driver -- GPS : Link_Solid（実線）
+    Driver ..> Fuel : Dependency（依存）
+    Car ..|> ILogger : Realization（実現）
+    GPS .. Fuel : Link_Dashed（点線）
 ```
 
 ## 5. 状態図（State Diagram）
