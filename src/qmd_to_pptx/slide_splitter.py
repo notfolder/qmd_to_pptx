@@ -56,9 +56,9 @@ class SlideSplitter:
 
         # slide_levelに基づいてスライド区切りパターンを決定する
         if slide_level == 1:
-            # slide-level: 1 の場合、# 見出しのみがスライド区切り（Section Headerなし）
+            # slide-level: 1 の場合、# 見出しのみがスライド区切り（##は本文の見出しとして扱う）
             separator_pattern = re.compile(
-                r"^(#{1,2} .+|---)\s*$",
+                r"^(# .+|---)\s*$",
                 re.MULTILINE,
             )
         else:

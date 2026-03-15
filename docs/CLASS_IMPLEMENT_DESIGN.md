@@ -69,7 +69,7 @@ qmd_to_pptx/（リポジトリルート）
 | `name` | `qmd-to-pptx` |
 | `version` | `0.1.0` |
 | `requires-python` | `>=3.11` |
-| `dependencies` | `markdown`, `pymdown-extensions`, `mermaid-parser-py`, `networkx`, `python-pptx`, `latex2mathml`, `mathml2omml`, `mcp[cli]` |
+| `dependencies` | `markdown`, `pymdown-extensions`, `mermaid-parser-py`, `networkx`, `numpy`, `python-pptx`, `latex2mathml`, `mathml2omml`, `mcp[cli]` |
 
 **[project.scripts] セクション**
 
@@ -167,10 +167,10 @@ classDiagram
         -_layout_json: LayoutJSON
         +render_all(normalized_text: str, output: str, reference_doc: str)
         -_load_layout_json() LayoutJSON
-        -_select_layout(content: SlideContent, nodes: list) str
+        -_select_layout(content: SlideContent, nodes: list, slide_level: int) str
         -_resolve_placeholder(slide, idx: int) bool
-        -_write_via_placeholder(slide, idx: int, element: Element)
-        -_write_via_textbox(slide, role: str, layout_def: LayoutDef, element: Element)
+        -_write_via_placeholder(slide, idx: int, node: DOMNodeInfo, layout_name: str)
+        -_write_via_textbox(slide, role: str, layout_def: LayoutDef, node: DOMNodeInfo)
     }
 
     SlideRenderer --> TextRenderer : 保持
@@ -296,10 +296,10 @@ classDiagram
 |---|---|---|---|
 | `render_all` | `normalized_text: str`, `output: str`, `reference_doc: str \| None` | `None` | YAMLパーサー・スライド分割器・Markdownパーサー・DOMトラバーサーを順に呼び出し、全スライドを生成して指定パスに保存する |
 | `_load_layout_json` | なし | `LayoutJSON` | パッケージ同梱の `resources/default_layout.json` を読み込み `LayoutJSON` オブジェクトを生成する |
-| `_select_layout` | `content: SlideContent`, `nodes: list[DOMNodeInfo]` | `str` | `SlideContent` の区切り種別と `nodes` 内のノード構成（`.columns` divの有無・テキスト/非テキストの混在）を元に `QMD_TO_PPTX_DESIGN.md` 4.8節のレイアウト自動選択ルールを適用してレイアウト名を返す |
+| `_select_layout` | `content: SlideContent`, `nodes: list[DOMNodeInfo]`, `slide_level: int` | `str` | `SlideContent` の区切り種別と `nodes` 内のノード構成（`.columns` divの有無・テキスト/非テキストの混在）および `slide_level` を元に `QMD_TO_PPTX_DESIGN.md` 4.8節のレイアウト自動選択ルールを適用してレイアウト名を返す。`slide_level: 1` の場合は HEADING1 を Section Header ではなく Title and Content にマップする |
 | `_resolve_placeholder` | `slide`, `idx: int` | `bool` | `slide.placeholders` に指定 `idx` が存在する場合は `True` を返す |
-| `_write_via_placeholder` | `slide`, `idx: int`, `element: Element` | `None` | `slide.placeholders[idx]` を取得し、テキスト系ノードはそのshapeを `TextRenderer` の対応メソッドに渡してコンテンツを書き込む。テーブルノードはプレースホルダーの座標を取得して `TextRenderer.render_table()` を呼び出す（パターンB・Dで使用） |
-| `_write_via_textbox` | `slide`, `role: str`, `layout_def: LayoutDef`, `element: Element` | `None` | `LayoutDef.placeholders` を `role` で線形探索して座標情報を取得し、テキスト系ノードは `add_textbox()` で作成したshapeを `TextRenderer` の対応メソッドに渡して書き込む。テーブルノードは `TextRenderer.render_table()` に座標を渡す（パターンA・C・Dで使用） |
+| `_write_via_placeholder` | `slide`, `idx: int`, `node: DOMNodeInfo`, `layout_name: str` | `None` | `slide.placeholders[idx]` を取得し、テキスト系ノードはそのshapeを `TextRenderer` の対応メソッドに渡してコンテンツを書き込む。テーブルノードはプレースホルダーの座標を取得して `TextRenderer.render_table()` を呼び出す（パターンB・Dで使用） |
+| `_write_via_textbox` | `slide`, `role: str`, `layout_def: LayoutDef`, `node: DOMNodeInfo` | `None` | `LayoutDef.placeholders` を `role` で線形探索して座標情報を取得し、テキスト系ノードは `add_textbox()` で作成したshapeを `TextRenderer` の対応メソッドに渡して書き込む。テーブルノードは `TextRenderer.render_table()` に座標を渡す（パターンA・C・Dで使用） |
 
 **プレースホルダーパターン適用方針：**
 
@@ -479,10 +479,9 @@ flowchart TD
     tr --> models
     mr --> models
     fr --> models
-    pre --> models
 ```
 
-`models.py` は全モジュールから参照される共有データ定義であり、パッケージ内の他モジュールへの依存を持たない。`mcp_server.py` はライブラリのエントリーポイントである `__init__.py` の `render()` 関数を呼び出す。
+`models.py` は全モジュールから参照される共有データ定義であり、パッケージ内の他モジュールへの依存を持たない。`preprocessor.py` は正規表現処理のみを行うため `models.py` に依存しない。`mcp_server.py` はライブラリのエントリーポイントである `__init__.py` の `render()` 関数を呼び出す。
 
 ---
 

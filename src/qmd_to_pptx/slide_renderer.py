@@ -105,7 +105,7 @@ class SlideRenderer:
             dom_root: ET.Element = md_parser.parse(content.body_text)
             nodes: list[DOMNodeInfo] = dom_traverser.traverse(dom_root)
 
-            layout_name = self._select_layout(content, nodes)
+            layout_name = self._select_layout(content, nodes, metadata.slide_level)
             slide = self._add_slide(prs, layout_name, effective_ref_doc)
 
             # 背景画像を設定する
@@ -171,6 +171,7 @@ class SlideRenderer:
         self,
         content: SlideContent,
         nodes: list[DOMNodeInfo],
+        slide_level: int = 2,
     ) -> str:
         """
         SlideContentの区切り種別とノード構成を元にレイアウト名を決定して返す。
@@ -183,14 +184,17 @@ class SlideRenderer:
             スライド内容。
         nodes : list[DOMNodeInfo]
             DOMノードリスト。
+        slide_level : int
+            スライド区切りとして扱う見出しレベル（1または2）。デフォルトは2。
 
         Returns
         -------
         str
             PowerPointレイアウト名。
         """
-        # Section Header: HEADING1による分割（デフォルトのslide-level: 2の場合）
-        if content.separator_type == SeparatorType.HEADING1:
+        # Section Header: HEADING1による分割 かつ slide-level: 2 の場合のみ適用
+        # slide-level: 1 の場合は HEADING1 もコンテンツスライドとして扱う
+        if content.separator_type == SeparatorType.HEADING1 and slide_level == 2:
             return "Section Header"
 
         # コンテンツが空の場合（スピーカーノートのみ含む場合を含む）
