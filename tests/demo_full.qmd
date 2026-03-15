@@ -71,7 +71,7 @@ $$f(x) = \frac{1}{\sigma\sqrt{2\pi}} e^{-\frac{(x-\mu)^2}{2\sigma^2}}$$
 
 # Mermaid図
 
-## フローチャート（標準記法）
+## 1. フローチャート（Flowchart）
 
 ```mermaid
 flowchart LR
@@ -82,17 +82,314 @@ flowchart LR
     D --> E
 ```
 
-## シーケンス図
+## 2. シーケンス図（Sequence Diagram）
 
 ```mermaid
-flowchart TD
-    Client --> Server
-    Server --> DB
-    DB --> Server
-    Server --> Client
+sequenceDiagram
+    participant A as クライアント
+    participant B as サーバー
+    participant C as データベース
+    A->>B: リクエスト送信
+    B->>C: クエリ実行
+    C-->>B: 結果返却
+    B-->>A: レスポンス返却
 ```
 
-## Quartoネイティブ記法
+## 3. ガントチャート（Gantt Diagram）
+
+```mermaid
+gantt
+    title プロジェクト計画
+    dateFormat YYYY-MM-DD
+    section 設計
+        要件定義  :done, des1, 2024-01-01, 2024-01-07
+        基本設計  :done, des2, 2024-01-08, 7d
+    section 実装
+        コーディング :active, dev1, 2024-01-15, 14d
+        テスト       :        dev2, after dev1, 7d
+    section リリース
+        デプロイ :milestone, 2024-02-05, 1d
+```
+
+## 4. クラス図（Class Diagram）
+
+```mermaid
+classDiagram
+    class Animal {
+        +String name
+        +int age
+        +makeSound() void
+    }
+    class Dog {
+        +String breed
+        +fetch() void
+    }
+    class Cat {
+        +bool indoor
+        +purr() void
+    }
+    Animal <|-- Dog
+    Animal <|-- Cat
+```
+
+## 5. 状態図（State Diagram）
+
+```mermaid
+stateDiagram-v2
+    [*] --> 待機中
+    待機中 --> 処理中 : 開始
+    処理中 --> 完了 : 成功
+    処理中 --> エラー : 失敗
+    エラー --> 待機中 : リトライ
+    完了 --> [*]
+```
+
+## 6. ER図（Entity Relationship Diagram）
+
+```mermaid
+erDiagram
+    CUSTOMER ||--o{ ORDER : places
+    ORDER ||--|{ LINE-ITEM : contains
+    PRODUCT ||--o{ LINE-ITEM : includes
+    CUSTOMER {
+        int id
+        string name
+        string email
+    }
+    ORDER {
+        int id
+        date ordered_at
+    }
+```
+
+## 7. ユーザージャーニー図（User Journey）
+
+```mermaid
+journey
+    title オンラインショッピング体験
+    section 商品探し
+        サイト訪問    : 5: ユーザー
+        検索実行      : 3: ユーザー
+        商品選択      : 4: ユーザー
+    section 購入
+        カートに追加  : 5: ユーザー
+        決済手続き    : 2: ユーザー
+        注文完了      : 5: ユーザー
+```
+
+## 8. 円グラフ（Pie Chart）
+
+```mermaid
+pie title 言語別コード比率
+    "Python" : 42
+    "TypeScript" : 28
+    "Rust" : 15
+    "Go" : 10
+    "その他" : 5
+```
+
+## 9. 象限チャート（Quadrant Chart）
+
+```mermaid
+quadrantChart
+    title 製品ポートフォリオ分析
+    x-axis 低成長 --> 高成長
+    y-axis 低シェア --> 高シェア
+    quadrant-1 スター
+    quadrant-2 問題児
+    quadrant-3 負け犬
+    quadrant-4 金のなる木
+    製品A: [0.7, 0.8]
+    製品B: [0.3, 0.7]
+    製品C: [0.2, 0.3]
+    製品D: [0.8, 0.3]
+```
+
+## 10. 要件図（Requirement Diagram）
+
+```mermaid
+requirementDiagram
+    requirement test_req {
+        id: 1
+        text: システムは99.9%の可用性を持つこと
+        risk: high
+        verifymethod: test
+    }
+    functionalRequirement login_req {
+        id: 2
+        text: ユーザーはログインできること
+        risk: medium
+        verifymethod: inspection
+    }
+    test_req - traces -> login_req
+```
+
+## 11. Gitグラフ（Git Graph）
+
+```mermaid
+gitGraph
+    commit id: "initial"
+    commit id: "feat: add login"
+    branch develop
+    checkout develop
+    commit id: "fix: typo"
+    commit id: "feat: add API"
+    checkout main
+    merge develop id: "merge develop"
+    commit id: "release: v1.0"
+```
+
+## 12. マインドマップ（Mindmap）
+
+```mermaid
+mindmap
+    root((qmd_to_pptx))
+        入力形式
+            QMD
+            Markdown
+        出力
+            PPTX
+        機能
+            数式
+            Mermaid図
+            テーブル
+            コード
+        利用方法
+            ライブラリ
+            MCPサーバー
+```
+
+## 13. タイムライン（Timeline）
+
+```mermaid
+timeline
+    title ソフトウェア開発史
+    1960 : アセンブリ言語
+    1970 : C言語
+         : Unix
+    1980 : C++
+         : Macintosh
+    1990 : Java
+         : World Wide Web
+    2000 : Python普及
+         : Agile開発
+    2010 : クラウドコンピューティング
+    2020 : AI・機械学習
+```
+
+## 14. ZenUML
+
+```mermaid
+zenuml
+    title 注文処理
+    @Actor Client
+    @Database DB
+    Client -> Server.process(order) {
+        Server -> DB.save(order)
+        return orderId
+    }
+```
+
+## 15. サンキー図（Sankey Diagram）
+
+```mermaid
+sankey-beta
+    エネルギー源,電力,60
+    エネルギー源,熱,40
+    電力,家庭用,25
+    電力,産業用,35
+    熱,暖房,30
+    熱,給湯,10
+```
+
+## 16. XYチャート（XY Chart）
+
+```mermaid
+xychart-beta
+    title "月別売上推移"
+    x-axis [1月, 2月, 3月, 4月, 5月, 6月]
+    y-axis "売上（万円）" 0 --> 1000
+    bar [400, 500, 650, 720, 850, 900]
+    line [400, 500, 650, 720, 850, 900]
+```
+
+## 17. ブロック図（Block Diagram）
+
+```mermaid
+block-beta
+    columns 3
+    A["フロントエンド"]:1
+    B["APIゲートウェイ"]:1
+    C["バックエンド"]:1
+    D["認証サービス"]:1
+    E["データベース"]:1
+    F["キャッシュ"]:1
+    A --> B
+    B --> C
+    B --> D
+    C --> E
+    C --> F
+```
+
+## 18. パケット図（Packet Diagram）
+
+```mermaid
+packet-beta
+    title TCP パケット構造
+    0-15: "送信元ポート"
+    16-31: "宛先ポート"
+    32-63: "シーケンス番号"
+    64-95: "確認応答番号"
+    96-99: "データオフセット"
+    100-105: "予約"
+    106-111: "フラグ"
+    112-127: "ウィンドウサイズ"
+```
+
+## 19. カンバン（Kanban）
+
+```mermaid
+kanban
+    todo["To Do"]
+        task1["要件定義"]
+        task2["DB設計"]
+    inprogress["In Progress"]
+        task3["API実装"]
+        task4["テスト作成"]
+    done["Done"]
+        task5["環境構築"]
+        task6["仕様策定"]
+```
+
+## 20. アーキテクチャ図（Architecture Diagram）
+
+```mermaid
+architecture-beta
+    group cloud(cloud)[クラウド]
+    service web(internet)[Webサーバー] in cloud
+    service api(server)[APIサーバー] in cloud
+    service db(database)[データベース] in cloud
+    service cache(disk)[キャッシュ] in cloud
+    web:R --> L:api
+    api:R --> L:db
+    api:B --> T:cache
+```
+
+## 21. C4図（C4 Diagram）
+
+```mermaid
+C4Context
+    title システムコンテキスト図
+    Person(user, "ユーザー", "アプリケーションを利用する人")
+    System(app, "Webアプリ", "主要なシステム")
+    System_Ext(email, "メールサービス", "通知送信")
+    System_Ext(payment, "決済サービス", "支払い処理")
+    Rel(user, app, "利用する", "HTTPS")
+    Rel(app, email, "送信する", "SMTP")
+    Rel(app, payment, "呼び出す", "API")
+```
+
+## 22. Quartoネイティブ記法
 
 ```{mermaid}
 flowchart LR
@@ -164,7 +461,12 @@ print(math.pi)
 
 - テキスト（段落・リスト・テーブル・コード）
 - 数式（インライン・ブロック）
-- Mermaid図（標準・Quartoネイティブ記法）
+- Mermaid図（全22種類）
+  - Flowchart / Sequence / Gantt / Class / State
+  - ER / User Journey / Pie / Quadrant / Requirement
+  - Git Graph / Mindmap / Timeline / ZenUML / Sankey
+  - XY Chart / Block / Packet / Kanban / Architecture / C4
+  - Quartoネイティブ記法
 - アニメーション（インクリメンタル・非インクリメンタル）
 - 2カラムレイアウト
 - スピーカーノート
