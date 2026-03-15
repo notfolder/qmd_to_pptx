@@ -192,6 +192,7 @@ Quartoでは Mermaid を ` ```{mermaid}` という記法のコードブロック
 | p（段落） | タグ名による判定 |
 | ul / ol（リスト） | タグ名による判定 |
 | table | タグ名による判定 |
+| code（非Mermaid） | タグ名がcodeかつクラス属性が `language-mermaid` でない |
 | code（Mermaid） | タグ名がcodeかつクラス属性が `language-mermaid` |
 | 数式（arithmatex） | クラス属性が `arithmatex` のspanまたはdiv |
 | スピーカーノート | クラス属性が `notes` のdiv |
@@ -369,7 +370,7 @@ flowchart LR
 | output | 文字列 | 出力先PPTXファイルのパス |
 | reference_doc | 文字列またはNone | ベースとなるPPTXテンプレートファイルのパス（省略可。省略時は白背景・Calibriフォントのデフォルト外観で生成し、コンテンツ配置は `default_layout.json` の座標を使用する） |
 
-`render` 関数は内部で 前処理器 → YAMLパーサー → スライド分割器 → Markdownパーサー → DOMトラバーサー → スライドレンダラーの順に各コンポーネントを呼び出し、最終的に指定された `output` パスにPPTXファイルを書き出す。`reference_doc` は省略可能であり、指定されている場合はそのテンプレートのデザインを継承する。YAMLフロントマターの `format.pptx.reference-doc` フィールドが指定されている場合も `reference_doc` 引数の値を優先して使用する。
+`render` 関数は内部でまず前処理器の `normalize()` を呼び出し、正規化済みテキストとともに `SlideRenderer.render_all()` を呼び出す。`render_all()` の内部では YAMLパーサー → スライド分割器 → Markdownパーサー → DOMトラバーサーの順に各コンポーネントを呼び出して全スライドを生成し、最終的に指定された `output` パスにPPTXファイルを書き出す。`reference_doc` は省略可能であり、指定されている場合はそのテンプレートのデザインを継承する。YAMLフロントマターの `format.pptx.reference-doc` フィールドが指定されている場合も `reference_doc` 引数の値を優先して使用する。
 
 ---
 
@@ -378,6 +379,7 @@ flowchart LR
 ```mermaid
 sequenceDiagram
     participant 呼び出し元
+    participant render関数
     participant 前処理器
     participant スライドレンダラー
     participant YAMLパーサー
@@ -388,8 +390,10 @@ sequenceDiagram
     participant Mermaidレンダラー
     participant 数式レンダラー
 
-    呼び出し元 ->> 前処理器: render(input, output[, reference_doc])
-    前処理器 -->> スライドレンダラー: 正規化済みQMDテキストを渡す
+    呼び出し元 ->> render関数: render(input, output[, reference_doc])
+    render関数 ->> 前処理器: normalize(text)
+    前処理器 -->> render関数: 正規化済みQMDテキストを返す
+    render関数 ->> スライドレンダラー: render_all(normalized_text, output, reference_doc)
     スライドレンダラー ->> YAMLパーサー: 正規化済みQMDテキストを渡す
     YAMLパーサー -->> スライドレンダラー: メタデータ辞書を返す
     スライドレンダラー ->> スライド分割器: QMD本文テキストを渡す
@@ -405,7 +409,8 @@ sequenceDiagram
         スライドレンダラー ->> 数式レンダラー: 数式ノードを渡す
     end
 
-    スライドレンダラー -->> 呼び出し元: PPTXファイルを出力
+    スライドレンダラー -->> render関数: 完了
+    render関数 -->> 呼び出し元: PPTXファイルを出力
 ```
 
 ---
@@ -452,13 +457,3 @@ sequenceDiagram
 - `print()` 関数による標準出力への書き出しは行わない
 - ログ出力には `logging` モジュールを使用し、ハンドラーのストリームを `sys.stderr` に設定する
 
-### 7.5 Claude Desktop登録設定例
-
-Claude Desktopに `stdio` モードで登録する際の `claude_desktop_config.json` の設定項目を示す。
-
-| 設定項目 | 内容 |
-|---|---|
-| command | 仮想環境内Pythonインタープリターへの絶対パス |
-| args[0] | `mcp_server.py` への絶対パス |
-| args[1] | `--transport` |
-| args[2] | `stdio` |
