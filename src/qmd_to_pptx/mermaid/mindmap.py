@@ -100,8 +100,10 @@ class MindmapRenderer(BaseDiagramRenderer):
         if not node_info:
             return
 
-        # 最大深さを算出する（depth = level // 2 - 1）
-        max_depth = max(self._node_depth(n) for n in node_info.values())
+        # 全ノードのlevel値をスキャンしてlevel→depth辞書を構築する
+        # インデント幅（2スペース, 4スペース等）に依存しない動的変換
+        level_depth_map = self._build_level_depth_map(node_info.values())
+        max_depth = max(level_depth_map.values()) if level_depth_map else 1
         max_depth = max(max_depth, 1)  # ゼロ除算防止
 
         # キャンバス中心（EMU）を計算する
@@ -125,6 +127,7 @@ class MindmapRenderer(BaseDiagramRenderer):
             root, 0.0, 2 * math.pi, 1, max_depth,
             emu_pos, branch_color_map,
             cx_emu, cy_emu, rx_outer, ry_outer,
+            level_depth_map=level_depth_map,
         )
 
         # 親子エッジを収集する
@@ -137,7 +140,7 @@ class MindmapRenderer(BaseDiagramRenderer):
             if node_id not in emu_pos:
                 continue
             nx, ny = emu_pos[node_id]
-            depth = self._node_depth(node)
+            depth = level_depth_map.get(node.get("level", 0), 0)
             fill_rgb = branch_color_map.get(node_id, (200, 200, 200))
             shape = self._draw_mindmap_node(slide, node, nx, ny, depth, fill_rgb)
             node_shapes[node_id] = shape
@@ -158,24 +161,29 @@ class MindmapRenderer(BaseDiagramRenderer):
     # レイアウト計算ヘルパー
     # ------------------------------------------------------------------
 
-    def _node_depth(self, node: dict) -> int:
+    def _build_level_depth_map(
+        self, nodes: object
+    ) -> dict[int, int]:
         """
-        ノードの深さを返す（root=0, L1=1, L2=2, ...）。
+        全ノードのlevel値をスキャンしてlevel→depth辞書を返す。
 
-        パーサーのlevelフィールドは2の倍数（root=2, L1=4, L2=6）で表されるため、
-        depth = level // 2 - 1 に変換する。
+        mermaid-parser-py の level フィールドはインデント幅（スペース数）に
+        等しく、2スペースなら 2,4,6、4スペースなら 4,8,12 となる。
+        インデント幅に依存しない深さ計算のため、level値を収集して
+        昇順ソートしたインデックスをdepthとして使用する。
 
         Parameters
         ----------
-        node : dict
-            パーサーが返したノード辞書。
+        nodes : Iterable[dict]
+            全ノードの辞書のイテラブル。
 
         Returns
         -------
-        int
-            ノードの深さ（0以上）。
+        dict[int, int]
+            {level_value: depth} の辞書。
         """
-        return max(0, node.get("level", 2) // 2 - 1)
+        levels = sorted(set(n.get("level", 0) for n in nodes))
+        return {lvl: idx for idx, lvl in enumerate(levels)}
 
     def _count_leaves(self, node: dict) -> int:
         """
@@ -250,6 +258,7 @@ class MindmapRenderer(BaseDiagramRenderer):
         ry_outer: int,
         parent_color: tuple[int, int, int] | None = None,
         l1_index: int = 0,
+        level_depth_map: dict[int, int] | None = None,
     ) -> int:
         """
         ノードの子を楕円放射状に配置し、emu_pos と branch_color_map を更新する。
@@ -293,8 +302,16 @@ class MindmapRenderer(BaseDiagramRenderer):
         # 現ノードの全葉ノード数（角度比率の分母として使用）
         node_leaves = self._count_leaves(node)
 
+        # 子ノードのlevel値から正しいdepthを計算する
+        # level_depth_mapがあれば使用し、なければ引数のdepthをそのまま使う
+        if level_depth_map is not None and children:
+            child_level = children[0].get("level", 0)
+            actual_depth = level_depth_map.get(child_level, depth)
+        else:
+            actual_depth = depth
+
         # この深さでのX・Y楕円半径（外辺半径の92%まで使用）
-        r_frac = (depth / max_depth) * 0.92
+        r_frac = (actual_depth / max_depth) * 0.92
         rx = int(r_frac * rx_outer)
         ry = int(r_frac * ry_outer)
 
@@ -340,6 +357,7 @@ class MindmapRenderer(BaseDiagramRenderer):
                 cx, cy, rx_outer, ry_outer,
                 parent_color=color,
                 l1_index=next_l1_index,
+                level_depth_map=level_depth_map,
             )
             current_angle += angle_span
 
