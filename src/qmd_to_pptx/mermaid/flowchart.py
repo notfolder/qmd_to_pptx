@@ -112,8 +112,11 @@ class FlowchartRenderer(BaseDiagramRenderer):
                     G.add_edge(str(src), str(dst))
 
         # mermaid_textから描画方向を取得して階層レイアウトを計算する
+        # canvasサイズを渡して同一世代にノードが入りきらない時の自動折り返しを有効にする
         direction = self._extract_direction(mermaid_text)
-        pos: dict[str, tuple[float, float]] = self._hierarchical_layout(G, direction)
+        pos: dict[str, tuple[float, float]] = self._hierarchical_layout(
+            G, direction, canvas_w=width, canvas_h=height
+        )
 
         # 頂点をシェイプ種別に応じて描画する
         node_shapes = self._draw_nodes_flowchart(
@@ -189,15 +192,11 @@ class FlowchartRenderer(BaseDiagramRenderer):
             if node_type == "lean_left":
                 self._apply_flip(shape, flip_h=True, flip_v=False)
 
-            # inv_trapezoid（逆台形）はprstGeomをinvertedTrapezoidに書き換える
-            # flipVを使うとテキストフレームも反転するため、XMLで輪郭の形状のみ変更する
+            # inv_trapezoid（逆台形）は垂直フリップを適用する。
+            # invertedTrapezoid はOOXML正規プリセット名に存在しないため、
+            # lean_left と同様に xfrm の flipV="1" で実現する。
             if node_type == "inv_trapezoid":
-                sp_el = shape._element
-                spPr = sp_el.find(qn("p:spPr"))
-                if spPr is not None:
-                    prstGeom = spPr.find(qn("a:prstGeom"))
-                    if prstGeom is not None:
-                        prstGeom.set("prst", "invertedTrapezoid")
+                self._apply_flip(shape, flip_h=False, flip_v=True)
 
             # 表示ラベルを設定する（text フィールドを優先、なければノードID）
             label = (
@@ -376,12 +375,17 @@ class FlowchartRenderer(BaseDiagramRenderer):
         self,
         G: nx.DiGraph,
         direction: str,
+        canvas_w: int | None = None,
+        canvas_h: int | None = None,
     ) -> dict[str, tuple[float, float]]:
         """
         描画方向に基づいたDAG階層レイアウト座標を計算する。
 
         グラフがDAGである場合はトポロジカル世代でレベルを決定し、
         各レベル内のノードを均等配置した正規化座標（-1.0〜1.0）を返す。
+        canvasに入りきらない場合は以下の2軸で自動折り返しを行う。
+          ・同一世代のノード数超過 → スパン軸方向にサブレベルへ分割
+          ・世代数（レベル数）超過 → レベル軸方向を複数レーンに折り返し
         サイクルを含むグラフはkamada_kawai → spring_layoutにフォールバックする。
 
         Parameters
@@ -390,6 +394,10 @@ class FlowchartRenderer(BaseDiagramRenderer):
             レイアウト計算対象の有向グラフ。
         direction : str
             描画方向（"TD" / "TB" / "BT" / "LR" / "RL"）。
+        canvas_w : int | None
+            描画エリアの幅（EMU）。
+        canvas_h : int | None
+            描画エリアの高さ（EMU）。
 
         Returns
         -------
@@ -403,41 +411,94 @@ class FlowchartRenderer(BaseDiagramRenderer):
             except Exception:
                 return nx.spring_layout(G, seed=42, k=2.0)
 
-        # トポロジカル世代でノードをレベルに分類する
         generations = list(nx.topological_generations(G))
-        n_levels = len(generations)
+
+        if direction in ("TD", "TB", "BT"):
+            # レベル軸=Y（世代が縦に並ぶ）、スパン軸=X（同一世代が横に並ぶ）
+            # スパン軸の上限: 1世代に横方向に入るノード数
+            max_span = (
+                max(1, canvas_w // NODE_WIDTH_EMU) if canvas_w is not None else None
+            )
+            # レベル軸の上限: 縦方向に入る世代数
+            max_levels = (
+                max(1, canvas_h // NODE_HEIGHT_EMU) if canvas_h is not None else None
+            )
+        else:  # LR, RL
+            # レベル軸=X（世代が横に並ぶ）、スパン軸=Y（同一世代が縦に並ぶ）
+            # スパン軸の上限: 1世代に縦方向に入るノード数
+            max_span = (
+                max(1, canvas_h // NODE_HEIGHT_EMU) if canvas_h is not None else None
+            )
+            # レベル軸の上限: 横方向に入る世代数（1レーン分）
+            max_levels = (
+                max(1, canvas_w // NODE_WIDTH_EMU) if canvas_w is not None else None
+            )
+
+        # ① 同一世代のノード数がmax_spanを超える場合、サブレベルに分割する
+        expanded_levels: list[list[str]] = []
+        for level_nodes in generations:
+            sorted_nodes = sorted(level_nodes)
+            if max_span is None or len(sorted_nodes) <= max_span:
+                expanded_levels.append(sorted_nodes)
+            else:
+                for i in range(0, len(sorted_nodes), max_span):
+                    expanded_levels.append(sorted_nodes[i : i + max_span])
+
+        # ② 世代数（expanded_levels数）がmax_levelsを超える場合、複数レーンに折り返す
+        # 各レーンはmax_levels個の世代を持ち、レーン同士はスパン軸方向に積み上げる
+        if max_levels is not None and len(expanded_levels) > max_levels:
+            lanes: list[list[list[str]]] = []
+            for i in range(0, len(expanded_levels), max_levels):
+                lanes.append(expanded_levels[i : i + max_levels])
+        else:
+            lanes = [expanded_levels]
+
+        n_lanes = len(lanes)
         pos: dict[str, tuple[float, float]] = {}
 
-        for level_idx, level_nodes in enumerate(generations):
-            n_in_level = len(level_nodes)
-            # レベル軸の正規化座標（最初の世代=-1.0, 最後の世代=+1.0）
-            level_norm = (
-                -1.0 + 2.0 * level_idx / (n_levels - 1)
-                if n_levels > 1
-                else 0.0
-            )
-            for node_idx, node_id in enumerate(sorted(level_nodes)):
-                # 同レベル内での均等配置座標
-                span_norm = (
-                    -1.0 + 2.0 * node_idx / (n_in_level - 1)
-                    if n_in_level > 1
-                    else 0.0
-                )
-                if direction in ("TD", "TB"):
-                    # 上→下: level_normがy軸（-1.0=上端, +1.0=下端）
-                    pos[node_id] = (span_norm, level_norm)
-                elif direction == "BT":
-                    # 下→上: y軸を反転
-                    pos[node_id] = (span_norm, -level_norm)
-                elif direction == "LR":
-                    # 左→右: level_normがx軸（-1.0=左端, +1.0=右端）
-                    pos[node_id] = (level_norm, span_norm)
-                elif direction == "RL":
-                    # 右→左: x軸を反転
-                    pos[node_id] = (-level_norm, span_norm)
+        for lane_idx, lane_levels in enumerate(lanes):
+            n_lvl = len(lane_levels)
+            # レベル軸の範囲: 各レーンはレベル軸全体（-1.0〜+1.0）を使う。
+            # 折り返し後もCR（レベル軸リセット）して幅いっぱいに広がる。
+            level_axis_start = -1.0
+            level_axis_end = 1.0
+            # スパン軸の範囲: 複数レーンをスパン軸方向に均等配置する。
+            # n_lanes=1 の場合は全体（-1.0〜+1.0）を使うので従来と同じ。
+            span_range_start = -1.0 + 2.0 * lane_idx / n_lanes
+            span_range_end = -1.0 + 2.0 * (lane_idx + 1) / n_lanes
+
+            for level_idx, level_nodes in enumerate(lane_levels):
+                n_in_level = len(level_nodes)
+                # レベル軸の正規化座標（各レーン共通で -1.0〜+1.0 全体を使う）
+                if n_lvl > 1:
+                    level_t = level_idx / (n_lvl - 1)  # 0.0〜1.0
                 else:
-                    # 未知の方向はTD（上→下）として扱う
-                    pos[node_id] = (span_norm, level_norm)
+                    level_t = 0.5
+                level_norm = level_axis_start + (level_axis_end - level_axis_start) * level_t
+
+                for node_idx, node_id in enumerate(level_nodes):
+                    # スパン軸の正規化座標（このレーン内で均等配置）
+                    if n_in_level > 1:
+                        span_t = node_idx / (n_in_level - 1)  # 0.0〜1.0
+                    else:
+                        span_t = 0.5
+                    span_norm = span_range_start + (span_range_end - span_range_start) * span_t
+
+                    if direction in ("TD", "TB"):
+                        # 上→下: level_normがY軸、span_normがX軸
+                        pos[node_id] = (span_norm, level_norm)
+                    elif direction == "BT":
+                        # 下→上: Y軸を反転
+                        pos[node_id] = (span_norm, -level_norm)
+                    elif direction == "LR":
+                        # 左→右: level_normがX軸、span_normがY軸
+                        pos[node_id] = (level_norm, span_norm)
+                    elif direction == "RL":
+                        # 右→左: X軸を反転
+                        pos[node_id] = (-level_norm, span_norm)
+                    else:
+                        # 未知の方向はTD（上→下）として扱う
+                        pos[node_id] = (span_norm, level_norm)
 
         return pos
 

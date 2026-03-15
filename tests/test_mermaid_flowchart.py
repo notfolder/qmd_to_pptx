@@ -360,3 +360,71 @@ class TestHierarchicalLayout:
         pos = self.renderer._hierarchical_layout(G, "TD")
         # フォールバックでも全ノードの座標が返ること
         assert set(pos.keys()) == {"A", "B", "C"}
+
+    def test_wrap_td_large_generation(self) -> None:
+        """TD方向でcanvas_wが狭い場合、1世代が複数サブレベルに折り返される。"""
+        # NODE_WIDTH_EMU=1200000 で canvas_w=2500000 → max_per_level=2
+        G = self.nx.DiGraph()
+        G.add_nodes_from(["A", "B", "C", "D"])  # 全ノード同一世代（エッジなし）
+        pos = self.renderer._hierarchical_layout(G, "TD", canvas_w=2500000)
+        # 4ノードがmax=2で折り返される → 2サブレベル → Y座標が2種類存在する
+        y_values = sorted(set(round(pos[n][1], 6) for n in pos))
+        assert len(y_values) == 2, f"折り返し後のサブレベル数が2でない: {y_values}"
+
+    def test_wrap_lr_large_generation(self) -> None:
+        """LR方向でcanvas_hが小さい場合、1世代が複数サブレベルに折り返される。"""
+        # NODE_HEIGHT_EMU=500000 で canvas_h=1100000 → max_per_level=2
+        G = self.nx.DiGraph()
+        G.add_nodes_from(["A", "B", "C"])
+        pos = self.renderer._hierarchical_layout(G, "LR", canvas_h=1100000)
+        # 3ノードがmax=2で折り返される → X座標が2種類存在する
+        x_values = sorted(set(round(pos[n][0], 6) for n in pos))
+        assert len(x_values) == 2, f"折り返し後のサブレベル数が2でない: {x_values}"
+
+    def test_wrap_partial_row_centered(self) -> None:
+        """折り返し後の部分行（最終行）はX=0に中央揃えされる。"""
+        # NODE_WIDTH_EMU=1200000, canvas_w=2500000 → max_per_level=2
+        # 3ノード → [A,B] + [C] → 最終行のCはspan_norm=0
+        G = self.nx.DiGraph()
+        G.add_nodes_from(["A", "B", "C"])
+        pos = self.renderer._hierarchical_layout(G, "TD", canvas_w=2500000)
+        # 最終行ノード（1ノード）はX=0に配置される
+        y_vals = sorted(set(round(pos[n][1], 6) for n in pos))
+        last_y = y_vals[-1]
+        last_row_nodes = [n for n in pos if round(pos[n][1], 6) == last_y]
+        assert len(last_row_nodes) == 1
+        assert abs(pos[last_row_nodes[0]][0]) < 1e-9, "部分行の単独ノードがX=0でない"
+
+    def test_no_wrap_when_no_canvas(self) -> None:
+        """canvas引数未指定時は折り返しなし（従来の挙動を維持）。"""
+        G = self.nx.DiGraph()
+        G.add_nodes_from(["A", "B", "C", "D", "E"])
+        pos = self.renderer._hierarchical_layout(G, "TD")
+        # 全ノード同一世代 → 折り返しなし → Y座標が全て同じ
+        y_values = set(round(pos[n][1], 6) for n in pos)
+        assert len(y_values) == 1, "canvas未指定なのに折り返しが発生した"
+
+    def test_lane_wrap_lr_chain(self) -> None:
+        """LR方向のチェーンでcanvas_w不足時にレーン折り返しが発生する。"""
+        # NODE_WIDTH_EMU=1200000, canvas_w=3700000 → max_levels=3
+        # 13ノード線形チェーン → 13世代 → 3世代ずつ折り返し → 複数のY値
+        G = self.nx.DiGraph()
+        nodes = list("ABCDEFGHIJKLMN")  # 14ノード
+        for i in range(len(nodes) - 1):
+            G.add_edge(nodes[i], nodes[i + 1])
+        pos = self.renderer._hierarchical_layout(G, "LR", canvas_w=3700000, canvas_h=4000000)
+        # レーン折り返しが発生していればY座標が複数種類存在する
+        y_values = set(round(pos[n][1], 6) for n in pos)
+        assert len(y_values) > 1, f"LRチェーンのレーン折り返しが発生していない: {pos}"
+
+    def test_lane_wrap_td_chain(self) -> None:
+        """TD方向のチェーンでcanvas_h不足時にレーン折り返しが発生する。"""
+        # NODE_HEIGHT_EMU=500000, canvas_h=1600000 → max_levels=3
+        # 10ノード線形チェーン → 10世代 → 3世代ずつ折り返し → 複数のX値
+        G = self.nx.DiGraph()
+        nodes = list("ABCDEFGHIJ")
+        for i in range(len(nodes) - 1):
+            G.add_edge(nodes[i], nodes[i + 1])
+        pos = self.renderer._hierarchical_layout(G, "TD", canvas_w=6000000, canvas_h=1600000)
+        x_values = set(round(pos[n][0], 6) for n in pos)
+        assert len(x_values) > 1, f"TDチェーンのレーン折り返しが発生していない: {pos}"
