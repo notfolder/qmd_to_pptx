@@ -6,10 +6,16 @@ MermaidRendererファサードモジュール。
 
 from __future__ import annotations
 
+import io
+import contextlib
 import re
 import xml.etree.ElementTree as ET
 
-from mermaid_parser import MermaidParser
+# mermaid パッケージが IPython 未インストール時に stdout へ警告を print() するため、
+# インポート時のみ stdout を抑制する
+with contextlib.redirect_stdout(io.StringIO()):
+    from mermaid_parser import MermaidParser
+
 from pptx.slide import Slide
 
 from .base import BaseDiagramRenderer
@@ -31,6 +37,8 @@ from .requirement_parser import parse_requirement
 from .requirement_renderer import RequirementRenderer
 from .sequence_diagram import SequenceDiagramRenderer
 from .state_diagram import StateDiagramRenderer
+from .timeline_parser import parse_timeline
+from .timeline_renderer import TimelineRenderer
 
 
 class MermaidRenderer:
@@ -56,6 +64,7 @@ class MermaidRenderer:
         self._pie = PieChartRenderer()
         self._quadrant = QuadrantRenderer()
         self._requirement = RequirementRenderer()
+        self._timeline = TimelineRenderer()
         # フォールバック描画は BaseDiagramRenderer に委ねる
         self._base = BaseDiagramRenderer()
 
@@ -153,6 +162,17 @@ class MermaidRenderer:
                 self._base._render_fallback(slide, mermaid_text, left, top, width, height)
                 return
             self._quadrant.render(slide, quadrant_chart, left, top, width, height)
+            return
+
+        # timeline は mermaid-parser-py が graph_data を空で返すため、
+        # パーサー呼び出し前にカスタムパーサーへ直接委譲する
+        if first_line.startswith("timeline"):
+            try:
+                timeline_data = parse_timeline(mermaid_text)
+            except Exception:
+                self._base._render_fallback(slide, mermaid_text, left, top, width, height)
+                return
+            self._timeline.render(slide, timeline_data, left, top, width, height)
             return
 
         # gantt は mermaid-parser-py が graph_data を返せないため、

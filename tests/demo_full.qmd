@@ -514,137 +514,103 @@ mindmap
             [GraphQL]
 ```
 
-## 13. タイムライン（Timeline）
+## 13a. タイムライン — 基本（section なし・複数イベント）
+
+```mermaid
+timeline
+    title History of Social Media Platform
+    2002 : LinkedIn
+    2004 : Facebook
+         : Google
+    2005 : YouTube
+    2006 : Twitter
+    2007 : Tumblr
+    2008 : Instagram
+    2010 : Pinterest
+```
+
+## 13b. タイムライン — section グループ化（産業革命）
+
+```mermaid
+timeline
+    title Timeline of Industrial Revolution
+    section 17th-20th century
+        Industry 1.0 : Machinery, Water power, Steam power
+        Industry 2.0 : Electricity, Internal combustion engine, Mass production
+        Industry 3.0 : Electronics, Computers, Automation
+    section 21st century
+        Industry 4.0 : Internet, Robotics, Internet of Things
+        Industry 5.0 : Artificial intelligence, Big data, 3D printing
+```
+
+## 13c. タイムライン — テキスト折り返し・<br>強制改行
+
+```mermaid
+timeline
+    title England's History Timeline
+    section Stone Age
+      7600 BC : Britain's oldest known house was built in Orkney, Scotland
+      6000 BC : Sea levels rise and Britain becomes an island.<br> The people who live here are hunter-gatherers.
+    section Bronze Age
+      2300 BC : People arrive from Europe and settle in Britain.<br>They bring farming and metalworking.
+              : New styles of pottery and ways of burying the dead appear.
+      2200 BC : The last major building works are completed at Stonehenge.<br> People now bury their dead in stone circles.
+```
+
+## 13d. タイムライン — 同行複数イベント・継続行
+
+```mermaid
+timeline
+    title MermaidChart 2023 Timeline
+    section 2023 Q1 <br> Release Personal Tier
+      Bullet 1 : sub-point 1a : sub-point 1b
+               : sub-point 1c
+      Bullet 2 : sub-point 2a : sub-point 2b
+    section 2023 Q2 <br> Release XYZ Tier
+      Bullet 3 : sub-point 3a : sub-point 3b
+               : sub-point 3c
+      Bullet 4 : sub-point 4a : sub-point 4b
+```
+
+## 13e. タイムライン — 日本語・ソフトウェア開発史
 
 ```mermaid
 timeline
     title ソフトウェア開発史
-    1960 : アセンブリ言語
-    1970 : C言語
-         : Unix
-    1980 : C++
-         : Macintosh
-    1990 : Java
-         : World Wide Web
-    2000 : Python普及
-         : Agile開発
-    2010 : クラウドコンピューティング
-    2020 : AI・機械学習
+    section 黎明期
+        1950年代 : アセンブリ言語 : Fortran誕生
+        1960年代 : COBOL : BASIC : 構造化プログラミング
+    section 普及期
+        1970年代 : C言語 : Unix開発
+        1980年代 : C++ : Macintosh : PC普及
+    section インターネット時代
+        1990年代 : Java : World Wide Web : オープンソース運動
+        2000年代 : Python普及 : Agile開発 : SNS台頭
+    section クラウド・AI時代
+        2010年代 : クラウドコンピューティング : スマートフォン全盛
+        2020年代 : AI・機械学習 : 大規模言語モデル
 ```
 
-## 14. ZenUML
+## 13f. タイムライン — section なし・カラーサイクル確認
 
 ```mermaid
-zenuml
-    title 注文処理
-    @Actor Client
-    @Database DB
-    Client -> Server.process(order) {
-        Server -> DB.save(order)
-        return orderId
-    }
+timeline
+    title プログラミング言語の歴史（カラーサイクルデモ）
+    1957 : Fortran
+    1959 : COBOL
+    1964 : BASIC
+    1972 : C言語
+    1983 : C++
+    1991 : Python
+    1995 : Java : JavaScript : Ruby
+    2003 : Scala
+    2009 : Go
+    2012 : TypeScript
+    2015 : Rust
+    2022 : Carbon
 ```
 
-## 15. サンキー図（Sankey Diagram）
-
-```mermaid
-sankey-beta
-    エネルギー源,電力,60
-    エネルギー源,熱,40
-    電力,家庭用,25
-    電力,産業用,35
-    熱,暖房,30
-    熱,給湯,10
-```
-
-## 16. XYチャート（XY Chart）
-
-```mermaid
-xychart-beta
-    title "月別売上推移"
-    x-axis [1月, 2月, 3月, 4月, 5月, 6月]
-    y-axis "売上（万円）" 0 --> 1000
-    bar [400, 500, 650, 720, 850, 900]
-    line [400, 500, 650, 720, 850, 900]
-```
-
-## 17. ブロック図（Block Diagram）
-
-```mermaid
-block-beta
-    columns 3
-    A["フロントエンド"]:1
-    B["APIゲートウェイ"]:1
-    C["バックエンド"]:1
-    D["認証サービス"]:1
-    E["データベース"]:1
-    F["キャッシュ"]:1
-    A --> B
-    B --> C
-    B --> D
-    C --> E
-    C --> F
-```
-
-## 18. パケット図（Packet Diagram）
-
-```mermaid
-packet-beta
-    title TCP パケット構造
-    0-15: "送信元ポート"
-    16-31: "宛先ポート"
-    32-63: "シーケンス番号"
-    64-95: "確認応答番号"
-    96-99: "データオフセット"
-    100-105: "予約"
-    106-111: "フラグ"
-    112-127: "ウィンドウサイズ"
-```
-
-## 19. カンバン（Kanban）
-
-```mermaid
-kanban
-    todo["To Do"]
-        task1["要件定義"]
-        task2["DB設計"]
-    inprogress["In Progress"]
-        task3["API実装"]
-        task4["テスト作成"]
-    done["Done"]
-        task5["環境構築"]
-        task6["仕様策定"]
-```
-
-## 20. アーキテクチャ図（Architecture Diagram）
-
-```mermaid
-architecture-beta
-    group cloud(cloud)[クラウド]
-    service web(internet)[Webサーバー] in cloud
-    service api(server)[APIサーバー] in cloud
-    service db(database)[データベース] in cloud
-    service cache(disk)[キャッシュ] in cloud
-    web:R --> L:api
-    api:R --> L:db
-    api:B --> T:cache
-```
-
-## 21. C4図（C4 Diagram）
-
-```mermaid
-C4Context
-    title システムコンテキスト図
-    Person(user, "ユーザー", "アプリケーションを利用する人")
-    System(app, "Webアプリ", "主要なシステム")
-    System_Ext(email, "メールサービス", "通知送信")
-    System_Ext(payment, "決済サービス", "支払い処理")
-    Rel(user, app, "利用する", "HTTPS")
-    Rel(app, email, "送信する", "SMTP")
-    Rel(app, payment, "呼び出す", "API")
-```
-
-## 22. Quartoネイティブ記法
+## 14. Quartoネイティブ記法
 
 ```{mermaid}
 flowchart LR
