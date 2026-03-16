@@ -23,6 +23,8 @@ from .journey_renderer import JourneyRenderer
 from .mindmap import MindmapRenderer
 from .pie_parser import parse_pie
 from .pie_renderer import PieChartRenderer
+from .quadrant_parser import parse_quadrant
+from .quadrant_renderer import QuadrantRenderer
 from .sequence_diagram import SequenceDiagramRenderer
 from .state_diagram import StateDiagramRenderer
 
@@ -47,6 +49,7 @@ class MermaidRenderer:
         self._gantt = GanttRenderer()
         self._journey = JourneyRenderer()
         self._pie = PieChartRenderer()
+        self._quadrant = QuadrantRenderer()
         # フォールバック描画は BaseDiagramRenderer に委ねる
         self._base = BaseDiagramRenderer()
 
@@ -109,6 +112,18 @@ class MermaidRenderer:
                 self._base._render_fallback(slide, mermaid_text, left, top, width, height)
                 return
             self._journey.render(slide, journey_chart, left, top, width, height)
+            return
+
+        # quadrantChart は mermaid-parser-py が graph_data を空で返し、
+        # 日本語テキストでは SpiderMonkeyError を送出するため、
+        # パーサー呼び出し前にカスタムパーサーへ直接委譲する
+        if first_line.startswith("quadrantchart"):
+            try:
+                quadrant_chart = parse_quadrant(mermaid_text)
+            except Exception:
+                self._base._render_fallback(slide, mermaid_text, left, top, width, height)
+                return
+            self._quadrant.render(slide, quadrant_chart, left, top, width, height)
             return
 
         # gantt は mermaid-parser-py が graph_data を返せないため、
