@@ -371,6 +371,32 @@ class BaseDiagramRenderer:
 
         return txBox
 
+    @staticmethod
+    def _next_shape_id(spTree: object) -> int:
+        """
+        spTree 内の全 cNvPr id の最大値 + 1 を返す。
+
+        手動で OOXML 要素（grpSp 等）を追加する際の衝突しない ID 採番に使用する。
+
+        Parameters
+        ----------
+        spTree : object
+            スライドの spTree lxml 要素。
+
+        Returns
+        -------
+        int
+            既存 id の最大値 + 1。
+        """
+        max_id: int = 0
+        for el in spTree.iter():
+            if el.tag.endswith("}cNvPr"):
+                try:
+                    max_id = max(max_id, int(el.get("id", 0)))
+                except ValueError:
+                    pass
+        return max_id + 1
+
     def _group_node_with_labels(
         self,
         slide: Slide,
@@ -433,8 +459,15 @@ class BaseDiagramRenderer:
         grp_w = max(1, max(rights) - grp_left)
         grp_h = max(1, max(bottoms) - grp_top)
 
-        # <p:grpSp> 要素を構築する
+        # <p:grpSp> 要素を構築する（OOXML スキーマ: 第1子は nvGrpSpPr が必須）
+        grp_id = self._next_shape_id(spTree)
         grpSp = lxml_etree.Element(qn("p:grpSp"))
+        nvGrpSpPr = lxml_etree.SubElement(grpSp, qn("p:nvGrpSpPr"))
+        cNvPr_el = lxml_etree.SubElement(nvGrpSpPr, qn("p:cNvPr"))
+        cNvPr_el.set("id", str(grp_id))
+        cNvPr_el.set("name", f"グループ {grp_id}")
+        lxml_etree.SubElement(nvGrpSpPr, qn("p:cNvGrpSpPr"))
+        lxml_etree.SubElement(nvGrpSpPr, qn("p:nvPr"))
         grpSpPr = lxml_etree.SubElement(grpSp, qn("p:grpSpPr"))
         xfrm = lxml_etree.SubElement(grpSpPr, qn("a:xfrm"))
         off_el = lxml_etree.SubElement(xfrm, qn("a:off"))

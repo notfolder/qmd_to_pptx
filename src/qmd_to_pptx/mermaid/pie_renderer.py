@@ -167,6 +167,10 @@ class PieChartRenderer:
         python-pptx の DataLabels クラスは dLblPos を直接設定する API を持たないため、
         lxml で OOXML を直接編集する。
 
+        OOXML スキーマ（CT_DLbls）の要素順序にしたがって c:dLblPos を
+        c:showLegendKey の直前に挿入する。順序違反があると PowerPoint が
+        ファイル修復を実行するため、必ず正しい位置に挿入する必要がある。
+
         Parameters
         ----------
         chart : object
@@ -176,14 +180,27 @@ class PieChartRenderer:
         """
         dLblPos_val = self._text_position_to_dLblPos(text_position)
 
-        # chart.plots[0] の OOXML 要素（<c:pieChart>）から <c:dLbls> を探して設定する
+        # chart.plots[0] の OOXML 要素（<c:pieChart>）から <c:dLbls> を探す
         plot_el = chart.plots[0]._element
         dLbls = plot_el.find(qn("c:dLbls"))
         if dLbls is None:
             return
 
-        # <c:dLblPos> 要素が既にあれば更新し、なければ挿入する
-        dLblPos_el = dLbls.find(qn("c:dLblPos"))
-        if dLblPos_el is None:
-            dLblPos_el = lxml_etree.SubElement(dLbls, qn("c:dLblPos"))
+        # 既存の <c:dLblPos> 要素があれば削除する（正しい位置に再挿入するため）
+        existing = dLbls.find(qn("c:dLblPos"))
+        if existing is not None:
+            dLbls.remove(existing)
+
+        # OOXML スキーマの定義順: ...dLblPos?, showLegendKey, showVal, ...
+        # c:showLegendKey の直前に c:dLblPos を挿入する
+        show_legend_key_el = dLbls.find(qn("c:showLegendKey"))
+        dLblPos_el = lxml_etree.Element(qn("c:dLblPos"))
         dLblPos_el.set("val", dLblPos_val)
+
+        if show_legend_key_el is not None:
+            # showLegendKey の index を取得して、その直前に挿入する
+            idx = list(dLbls).index(show_legend_key_el)
+            dLbls.insert(idx, dLblPos_el)
+        else:
+            # showLegendKey が見つからない場合は先頭に追加する（フォールバック）
+            dLbls.insert(0, dLblPos_el)

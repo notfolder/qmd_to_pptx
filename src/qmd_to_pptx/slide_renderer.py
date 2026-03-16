@@ -12,7 +12,9 @@ import json
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from lxml import etree as lxml_etree
 from pptx import Presentation
+from pptx.oxml.ns import qn
 from pptx.slide import Slide
 from pptx.util import Emu, Pt
 
@@ -692,7 +694,33 @@ class SlideRenderer:
             # レイアウトが見つからない場合は最初のレイアウトを使用する
             layout = prs.slide_layouts[0]
 
-        return prs.slides.add_slide(layout)
+        slide = prs.slides.add_slide(layout)
+        self._fix_slide_xml(slide)
+        return slide
+
+    def _fix_slide_xml(self, slide: Slide) -> None:
+        """
+        python-pptx が生成したスライド XML の OOXML スキーマ不備を修正する。
+
+        p:spTree の p:grpSpPr が空（a:xfrm なし）の場合、
+        PowerPoint が修復ダイアログを表示するため、ゼロ座標の a:xfrm を補完する。
+        """
+        spTree = slide.shapes._spTree
+        grpSpPr = spTree.find(qn("p:grpSpPr"))
+        if grpSpPr is not None and grpSpPr.find(qn("a:xfrm")) is None:
+            xfrm = lxml_etree.SubElement(grpSpPr, qn("a:xfrm"))
+            off = lxml_etree.SubElement(xfrm, qn("a:off"))
+            off.set("x", "0")
+            off.set("y", "0")
+            ext = lxml_etree.SubElement(xfrm, qn("a:ext"))
+            ext.set("cx", "0")
+            ext.set("cy", "0")
+            chOff = lxml_etree.SubElement(xfrm, qn("a:chOff"))
+            chOff.set("x", "0")
+            chOff.set("y", "0")
+            chExt = lxml_etree.SubElement(xfrm, qn("a:chExt"))
+            chExt.set("cx", "0")
+            chExt.set("cy", "0")
 
     def _find_layout(
         self, prs: Presentation, layout_name: str

@@ -494,7 +494,15 @@ class ErDiagramRenderer(BaseDiagramRenderer):
         grp_w = max(1, max(rights) - grp_left)
         grp_h = max(1, max(bottoms) - grp_top)
 
+        # OOXML スキーマ: p:grpSp の第1子は p:nvGrpSpPr が必須
+        grp_id = self._next_shape_id(spTree)
         grpSp = lxml_etree.Element(qn("p:grpSp"))
+        nvGrpSpPr = lxml_etree.SubElement(grpSp, qn("p:nvGrpSpPr"))
+        cNvPr_el = lxml_etree.SubElement(nvGrpSpPr, qn("p:cNvPr"))
+        cNvPr_el.set("id", str(grp_id))
+        cNvPr_el.set("name", f"グループ {grp_id}")
+        lxml_etree.SubElement(nvGrpSpPr, qn("p:cNvGrpSpPr"))
+        lxml_etree.SubElement(nvGrpSpPr, qn("p:nvPr"))
         grpSpPr = lxml_etree.SubElement(grpSp, qn("p:grpSpPr"))
         xfrm = lxml_etree.SubElement(grpSpPr, qn("a:xfrm"))
         off_el = lxml_etree.SubElement(xfrm, qn("a:off"))
@@ -828,8 +836,15 @@ class ErDiagramRenderer(BaseDiagramRenderer):
         grp_w = max(1, max(rights) - grp_left)
         grp_h = max(1, max(bottoms) - grp_top)
 
-        # <p:grpSp> を構築する（子座標系 = スライド座標系に設定して絶対座標をそのまま保持する）
+        # <p:grpSp> を構築する（OOXML スキーマ: 第1子は p:nvGrpSpPr が必須）
+        grp_id = self._next_shape_id(spTree)
         grpSp = lxml_etree.Element(qn("p:grpSp"))
+        nvGrpSpPr = lxml_etree.SubElement(grpSp, qn("p:nvGrpSpPr"))
+        cNvPr_el = lxml_etree.SubElement(nvGrpSpPr, qn("p:cNvPr"))
+        cNvPr_el.set("id", str(grp_id))
+        cNvPr_el.set("name", f"グループ {grp_id}")
+        lxml_etree.SubElement(nvGrpSpPr, qn("p:cNvGrpSpPr"))
+        lxml_etree.SubElement(nvGrpSpPr, qn("p:nvPr"))
         grpSpPr = lxml_etree.SubElement(grpSp, qn("p:grpSpPr"))
         xfrm = lxml_etree.SubElement(grpSpPr, qn("a:xfrm"))
         off_el = lxml_etree.SubElement(xfrm, qn("a:off"))
