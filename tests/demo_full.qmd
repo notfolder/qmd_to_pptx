@@ -380,7 +380,7 @@ requirementDiagram
     test_req - traces -> login_req
 ```
 
-## 11. Gitグラフ（Git Graph）
+## 11a. Gitグラフ — 基本構造（LR方向）
 
 ```mermaid
 gitGraph
@@ -393,6 +393,100 @@ gitGraph
     checkout main
     merge develop id: "merge develop"
     commit id: "release: v1.0"
+```
+
+## 11b. Gitグラフ — コミットタイプ全種（NORMAL/REVERSE/HIGHLIGHT）とタグ
+
+```mermaid
+gitGraph
+    commit id: "Normal" tag: "start"
+    commit id: "Reverse" type: REVERSE
+    commit id: "Highlight" type: HIGHLIGHT tag: "v1.0.0"
+    commit id: "Tagged" tag: "v1.0.1"
+    commit id: "Normal2"
+```
+
+## 11c. Gitグラフ — 複数ブランチ・マージ・チェリーピック
+
+```mermaid
+gitGraph
+    commit id: "ZERO"
+    branch develop
+    branch release
+    commit id: "A"
+    checkout main
+    commit id: "ONE"
+    checkout develop
+    commit id: "B"
+    checkout main
+    merge develop id: "MERGE" tag: "merge-tag"
+    commit id: "TWO"
+    checkout release
+    cherry-pick id: "MERGE" parent: "B"
+    commit id: "THREE"
+    checkout develop
+    commit id: "C"
+```
+
+## 11d. Gitグラフ — Git Flowモデル（hotfix/feature/release）
+
+```mermaid
+gitGraph
+    commit id: "init"
+    branch hotfix
+    checkout hotfix
+    commit id: "hotfix-1" type: REVERSE
+    checkout main
+    merge hotfix id: "merge-hotfix" tag: "v0.1.1"
+    branch develop
+    checkout develop
+    commit id: "dev-1"
+    branch feature/login
+    checkout feature/login
+    commit id: "login-1"
+    commit id: "login-2" type: HIGHLIGHT
+    checkout develop
+    merge feature/login id: "merge-login"
+    branch release/v1.0
+    checkout release/v1.0
+    commit id: "rc-1" tag: "v1.0-rc1"
+    checkout main
+    merge release/v1.0 id: "release" tag: "v1.0.0"
+    checkout develop
+    merge release/v1.0 id: "back-merge"
+```
+
+## 11e. Gitグラフ — TB方向（上→下）とbranch order指定
+
+```mermaid
+gitGraph TB:
+    commit id: "start"
+    branch test1 order: 3
+    branch test2 order: 2
+    branch test3 order: 1
+    checkout test3
+    commit id: "t3-1"
+    checkout test2
+    commit id: "t2-1"
+    checkout test1
+    commit id: "t1-1"
+    checkout main
+    commit id: "main-1"
+    merge test3 id: "mT3" tag: "merged"
+```
+
+## 11f. Gitグラフ — BT方向（下→上）とメッセージ付きコミット
+
+```mermaid
+gitGraph BT:
+    commit id: "v1" msg: "バージョン1リリース" tag: "v1.0"
+    branch feature
+    checkout feature
+    commit id: "f1" msg: "フィーチャー開発" type: HIGHLIGHT
+    commit id: "f2" msg: "テスト追加"
+    checkout main
+    merge feature id: "merge-f" tag: "v2.0"
+    commit id: "v2" msg: "バージョン2リリース" type: NORMAL tag: "v2.0.1"
 ```
 
 ## 12. マインドマップ（Mindmap）
@@ -622,10 +716,10 @@ print(math.pi)
 
 - テキスト（段落・リスト・テーブル・コード）
 - 数式（インライン・ブロック）
-- Mermaid図（全22種類）
+- Mermaid図（全22種類+）
   - Flowchart / Sequence / Gantt / Class / State
   - ER / User Journey / Pie / Quadrant / Requirement
-  - Git Graph / Mindmap / Timeline / ZenUML / Sankey
+  - **Git Graph（a-f: 6バリエーション）** / Mindmap / Timeline / ZenUML / Sankey
   - XY Chart / Block / Packet / Kanban / Architecture / C4
   - Quartoネイティブ記法
 - アニメーション（インクリメンタル・非インクリメンタル）

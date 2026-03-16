@@ -18,6 +18,8 @@ from .er_diagram import ErDiagramRenderer
 from .flowchart import FlowchartRenderer
 from .gantt_parser import parse_gantt
 from .gantt_renderer import GanttRenderer
+from .gitgraph_parser import parse_gitgraph
+from .gitgraph_renderer import GitGraphRenderer
 from .journey_parser import parse_journey
 from .journey_renderer import JourneyRenderer
 from .mindmap import MindmapRenderer
@@ -49,6 +51,7 @@ class MermaidRenderer:
         self._mindmap = MindmapRenderer()
         self._sequence = SequenceDiagramRenderer()
         self._gantt = GanttRenderer()
+        self._gitgraph = GitGraphRenderer()
         self._journey = JourneyRenderer()
         self._pie = PieChartRenderer()
         self._quadrant = QuadrantRenderer()
@@ -93,6 +96,17 @@ class MermaidRenderer:
         first_line = mermaid_text.splitlines()[0].strip().lower() if mermaid_text else ""
         if any(first_line.startswith(p) for p in _UNSUPPORTED_PREFIXES):
             self._base._render_fallback(slide, mermaid_text, left, top, width, height)
+            return
+
+        # gitGraph は mermaid-parser-py が graph_data をメソッド経由で保持するため
+        # JSON.stringify で空になる。カスタムパーサーへ直接委譲する
+        if first_line.startswith("gitgraph"):
+            try:
+                git_graph = parse_gitgraph(mermaid_text)
+            except Exception:
+                self._base._render_fallback(slide, mermaid_text, left, top, width, height)
+                return
+            self._gitgraph.render(slide, git_graph, left, top, width, height)
             return
 
         # pie は mermaid-parser-py が graph_data を空で返すため、
