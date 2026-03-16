@@ -19,6 +19,8 @@ from .flowchart import FlowchartRenderer
 from .gantt_parser import parse_gantt
 from .gantt_renderer import GanttRenderer
 from .mindmap import MindmapRenderer
+from .pie_parser import parse_pie
+from .pie_renderer import PieChartRenderer
 from .sequence_diagram import SequenceDiagramRenderer
 from .state_diagram import StateDiagramRenderer
 
@@ -41,6 +43,7 @@ class MermaidRenderer:
         self._mindmap = MindmapRenderer()
         self._sequence = SequenceDiagramRenderer()
         self._gantt = GanttRenderer()
+        self._pie = PieChartRenderer()
         # フォールバック描画は BaseDiagramRenderer に委ねる
         self._base = BaseDiagramRenderer()
 
@@ -81,6 +84,17 @@ class MermaidRenderer:
         first_line = mermaid_text.splitlines()[0].strip().lower() if mermaid_text else ""
         if any(first_line.startswith(p) for p in _UNSUPPORTED_PREFIXES):
             self._base._render_fallback(slide, mermaid_text, left, top, width, height)
+            return
+
+        # pie は mermaid-parser-py が graph_data を空で返すため、
+        # パーサー呼び出し前にカスタムパーサーへ直接委譲する
+        if first_line.startswith("pie"):
+            try:
+                pie_chart = parse_pie(mermaid_text)
+            except Exception:
+                self._base._render_fallback(slide, mermaid_text, left, top, width, height)
+                return
+            self._pie.render(slide, pie_chart, left, top, width, height)
             return
 
         # gantt は mermaid-parser-py が graph_data を返せないため、

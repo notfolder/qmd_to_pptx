@@ -325,6 +325,8 @@ journey
 
 ## 8. 円グラフ（Pie Chart）
 
+パーセント表示のみ（showData なし）:
+
 ```mermaid
 pie title 言語別コード比率
     "Python" : 42
@@ -332,6 +334,16 @@ pie title 言語別コード比率
     "Rust" : 15
     "Go" : 10
     "その他" : 5
+```
+
+パーセント + 実数値表示（showData あり）:
+
+```mermaid
+pie showData title 売上内訳（百万円）
+    "製品A" : 120.5
+    "製品B" : 87.3
+    "製品C" : 54.0
+    "サービス" : 38.2
 ```
 
 ## 9. 象限チャート（Quadrant Chart）
