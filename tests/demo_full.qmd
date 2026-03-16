@@ -285,15 +285,26 @@ stateDiagram-v2
 erDiagram
     CUSTOMER ||--o{ ORDER : places
     ORDER ||--|{ LINE-ITEM : contains
-    PRODUCT ||--o{ LINE-ITEM : includes
+    PRODUCT }o..o{ LINE-ITEM : includes
     CUSTOMER {
-        int id
+        int id PK
         string name
-        string email
+        string email UK "Email address"
     }
     ORDER {
-        int id
+        int id PK
+        int customer_id FK
         date ordered_at
+    }
+    LINE-ITEM {
+        string productCode PK, FK
+        int quantity
+        float pricePerUnit
+    }
+    PRODUCT {
+        string code PK
+        string name
+        float price "Unit price"
     }
 ```
 
