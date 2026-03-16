@@ -25,6 +25,8 @@ from .pie_parser import parse_pie
 from .pie_renderer import PieChartRenderer
 from .quadrant_parser import parse_quadrant
 from .quadrant_renderer import QuadrantRenderer
+from .requirement_parser import parse_requirement
+from .requirement_renderer import RequirementRenderer
 from .sequence_diagram import SequenceDiagramRenderer
 from .state_diagram import StateDiagramRenderer
 
@@ -50,6 +52,7 @@ class MermaidRenderer:
         self._journey = JourneyRenderer()
         self._pie = PieChartRenderer()
         self._quadrant = QuadrantRenderer()
+        self._requirement = RequirementRenderer()
         # フォールバック描画は BaseDiagramRenderer に委ねる
         self._base = BaseDiagramRenderer()
 
@@ -112,6 +115,18 @@ class MermaidRenderer:
                 self._base._render_fallback(slide, mermaid_text, left, top, width, height)
                 return
             self._journey.render(slide, journey_chart, left, top, width, height)
+            return
+
+        # requirementDiagram は mermaid-parser-py の Jison レキサーが
+        # ASCII \w 限定のため日本語で SpiderMonkeyError を送出する。
+        # カスタムパーサーへ直接委譲する
+        if first_line.startswith("requirementdiagram"):
+            try:
+                req_diagram = parse_requirement(mermaid_text)
+            except Exception:
+                self._base._render_fallback(slide, mermaid_text, left, top, width, height)
+                return
+            self._requirement.render(slide, req_diagram, left, top, width, height)
             return
 
         # quadrantChart は mermaid-parser-py が graph_data を空で返し、
