@@ -25,9 +25,18 @@ qmd_to_pptx/（リポジトリルート）
         ├── dom_traverser.py
         ├── slide_renderer.py
         ├── text_renderer.py
-        ├── mermaid_renderer.py
+        ├── mermaid_renderer.py       ← 後方互換のre-exportのみ
         ├── formula_renderer.py
         ├── mcp_server.py
+        ├── mermaid/                  ← Mermaidレンダラーサブパッケージ
+        │   ├── __init__.py
+        │   ├── renderer.py           ← MermaidRenderer（ファサード）
+        │   ├── base.py               ← BaseDiagramRenderer（共通ユーティリティ）
+        │   ├── flowchart.py          ← FlowchartRenderer
+        │   ├── class_diagram.py      ← ClassDiagramRenderer
+        │   ├── state_diagram.py      ← StateDiagramRenderer
+        │   ├── er_diagram.py         ← ErDiagramRenderer
+        │   └── mindmap.py            ← MindmapRenderer
         └── resources/
             └── default_layout.json
 ```
@@ -49,9 +58,17 @@ qmd_to_pptx/（リポジトリルート）
 | `src/qmd_to_pptx/dom_traverser.py` | DOMトラバーサークラス `DOMTraverser` を定義する |
 | `src/qmd_to_pptx/slide_renderer.py` | スライドレンダラークラス `SlideRenderer` を定義する。各コンポーネントを呼び出す中心的なオーケストレーター |
 | `src/qmd_to_pptx/text_renderer.py` | テキストレンダラークラス `TextRenderer` を定義する |
-| `src/qmd_to_pptx/mermaid_renderer.py` | Mermaidレンダラークラス `MermaidRenderer` を定義する |
+| `src/qmd_to_pptx/mermaid_renderer.py` | 後方互換のための再エクスポートモジュール。`qmd_to_pptx.mermaid.MermaidRenderer` を再エクスポートする |
 | `src/qmd_to_pptx/formula_renderer.py` | 数式レンダラークラス `FormulaRenderer` を定義する |
 | `src/qmd_to_pptx/mcp_server.py` | MCPサーバーのエントリーポイント。`main()` 関数を `[project.scripts]` として公開する |
+| `src/qmd_to_pptx/mermaid/__init__.py` | mermaidサブパッケージのエントリーポイント。`MermaidRenderer` を公開する |
+| `src/qmd_to_pptx/mermaid/renderer.py` | `MermaidRenderer` ファサードクラス。ダイアグラム種別ごとに専用レンダラーへ委譲する |
+| `src/qmd_to_pptx/mermaid/base.py` | `BaseDiagramRenderer` 基底クラス。座標変換・ノード描画・エッジ描画・フォールバックの共通ロジックを提供する |
+| `src/qmd_to_pptx/mermaid/flowchart.py` | `FlowchartRenderer`。14種類のノード形状・7種類のエッジ矢印・4種類の線種・エッジラベルに対応する |
+| `src/qmd_to_pptx/mermaid/class_diagram.py` | `ClassDiagramRenderer`。UMLクラス図形式（3段ボックス・UML矢印8種類）で描画する |
+| `src/qmd_to_pptx/mermaid/state_diagram.py` | `StateDiagramRenderer`。stateDiagram-v2を描画する |
+| `src/qmd_to_pptx/mermaid/er_diagram.py` | `ErDiagramRenderer`。erDiagramを描画する |
+| `src/qmd_to_pptx/mermaid/mindmap.py` | `MindmapRenderer`。マインドマップをツリーレイアウトで描画する |
 | `src/qmd_to_pptx/resources/default_layout.json` | スライドレイアウト座標定義JSON。パッケージデータとして同梱される |
 
 ---
@@ -69,7 +86,7 @@ qmd_to_pptx/（リポジトリルート）
 | `name` | `qmd-to-pptx` |
 | `version` | `0.1.0` |
 | `requires-python` | `>=3.11` |
-| `dependencies` | `markdown`, `pymdown-extensions`, `mermaid-parser-py`, `networkx`, `python-pptx`, `latex2mathml`, `mathml2omml`, `mcp[cli]` |
+| `dependencies` | `markdown`, `pymdown-extensions`, `mermaid-parser-py`, `networkx`, `numpy`, `python-pptx`, `lxml`, `latex2mathml`, `mathml2omml`, `mcp[cli]` |
 
 **[project.scripts] セクション**
 
@@ -114,7 +131,13 @@ qmd_to_pptx/（リポジトリルート）
 | `MarkdownParser` | `markdown_parser.py` | Markdownパーサー（4.3節） |
 | `DOMTraverser` | `dom_traverser.py` | DOMトラバーサー（4.4節） |
 | `TextRenderer` | `text_renderer.py` | テキストレンダラー（4.5節） |
-| `MermaidRenderer` | `mermaid_renderer.py` | Mermaidレンダラー（4.6節） |
+| `MermaidRenderer` | `mermaid/renderer.py` | Mermaidレンダラー（4.6節）ファサード |
+| `BaseDiagramRenderer` | `mermaid/base.py` | Mermaidレンダラー（4.6節）基底クラス |
+| `FlowchartRenderer` | `mermaid/flowchart.py` | Mermaidレンダラー（4.6節）フローチャート |
+| `ClassDiagramRenderer` | `mermaid/class_diagram.py` | Mermaidレンダラー（4.6節）クラス図 |
+| `StateDiagramRenderer` | `mermaid/state_diagram.py` | Mermaidレンダラー（4.6節）状態図 |
+| `ErDiagramRenderer` | `mermaid/er_diagram.py` | Mermaidレンダラー（4.6節）ER図 |
+| `MindmapRenderer` | `mermaid/mindmap.py` | Mermaidレンダラー（4.6節）マインドマップ |
 | `FormulaRenderer` | `formula_renderer.py` | 数式レンダラー（4.7節） |
 | `SlideRenderer` | `slide_renderer.py` | スライドレンダラー（4.8節） |
 
@@ -167,10 +190,10 @@ classDiagram
         -_layout_json: LayoutJSON
         +render_all(normalized_text: str, output: str, reference_doc: str)
         -_load_layout_json() LayoutJSON
-        -_select_layout(content: SlideContent, nodes: list) str
+        -_select_layout(content: SlideContent, nodes: list, slide_level: int) str
         -_resolve_placeholder(slide, idx: int) bool
-        -_write_via_placeholder(slide, idx: int, element: Element)
-        -_write_via_textbox(slide, role: str, layout_def: LayoutDef, element: Element)
+        -_write_via_placeholder(slide, idx: int, node: DOMNodeInfo, layout_name: str, incremental: bool)
+        -_write_via_textbox(slide, role: str, layout_def: LayoutDef, node: DOMNodeInfo, incremental: bool)
     }
 
     SlideRenderer --> TextRenderer : 保持
@@ -264,7 +287,16 @@ classDiagram
 
 | メソッド | 引数 | 戻り値 | 処理内容 |
 |---|---|---|---|
-| `normalize` | `text: str` | `str` | YAMLフロントマター補完・Mermaid記法統一・コードブロック記法統一を順に適用し、正規化済みQMDテキストを返す |
+| `normalize` | `text: str` | `str` | YAMLフロントマター補完・Mermaid記法統一・コードブロック記法統一・フェンスドdiv変換を順に適用し、正規化済みQMDテキストを返す |
+
+`normalize` が行う4つの処理の詳細：
+
+| 処理名 | 検出条件 | 正規化内容 |
+|---|---|---|
+| YAMLフロントマター補完 | テキスト先頭が `---\n` で始まらない | 空の `title`/`author`/`date` フィールドを持つ最小限のYAMLフロントマターを付与する |
+| Mermaid記法の統一 | ` ```{mermaid} ` 行を検出 | ` ```mermaid ` 形式に置換する |
+| コードブロック記法の統一 | ` ```{言語名} ` または ` ```{.言語名} ` 行を検出 | ` ```言語名 ` 形式に置換する |
+| フェンスドdiv変換 | `::: {.class}` … `:::` ブロックを検出 | `<div class="class" markdown="1">` … `</div>` へ変換する。ネストしたdivも再帰的に処理する。コードブロック（` ``` `）内は変換対象外 |
 
 #### YAMLParser
 
@@ -282,7 +314,7 @@ classDiagram
 
 | メソッド | 引数 | 戻り値 | 処理内容 |
 |---|---|---|---|
-| `parse` | `text: str` | `Element` | `pymdownx.superfences`・`pymdownx.arithmatex`・`tables`・`fenced_code` の各extensionを適用し、MarkdownをHTMLに変換してDOMツリーのルート `Element` を返す |
+| `parse` | `text: str` | `Element` | `pymdownx.superfences`・`pymdownx.arithmatex`・`tables`・`fenced_code`・`md_in_html` の各extensionを適用し、MarkdownをHTMLに変換してDOMツリーのルート `Element` を返す。`md_in_html` 拡張により、`<div markdown="1">` 内のMarkdownも処理される |
 
 #### DOMTraverser
 
@@ -296,10 +328,18 @@ classDiagram
 |---|---|---|---|
 | `render_all` | `normalized_text: str`, `output: str`, `reference_doc: str \| None` | `None` | YAMLパーサー・スライド分割器・Markdownパーサー・DOMトラバーサーを順に呼び出し、全スライドを生成して指定パスに保存する |
 | `_load_layout_json` | なし | `LayoutJSON` | パッケージ同梱の `resources/default_layout.json` を読み込み `LayoutJSON` オブジェクトを生成する |
-| `_select_layout` | `content: SlideContent`, `nodes: list[DOMNodeInfo]` | `str` | `SlideContent` の区切り種別と `nodes` 内のノード構成（`.columns` divの有無・テキスト/非テキストの混在）を元に `QMD_TO_PPTX_DESIGN.md` 4.8節のレイアウト自動選択ルールを適用してレイアウト名を返す |
+| `_select_layout` | `content: SlideContent`, `nodes: list[DOMNodeInfo]`, `slide_level: int` | `str` | `SlideContent` の区切り種別と `nodes` 内のノード構成（`.columns` divの有無・テキスト/非テキストの混在）および `slide_level` を元に `QMD_TO_PPTX_DESIGN.md` 4.8節のレイアウト自動選択ルールを適用してレイアウト名を返す。`slide_level: 1` の場合は HEADING1 を Section Header ではなく Title and Content にマップする |
 | `_resolve_placeholder` | `slide`, `idx: int` | `bool` | `slide.placeholders` に指定 `idx` が存在する場合は `True` を返す |
-| `_write_via_placeholder` | `slide`, `idx: int`, `element: Element` | `None` | `slide.placeholders[idx]` を取得し、テキスト系ノードはそのshapeを `TextRenderer` の対応メソッドに渡してコンテンツを書き込む。テーブルノードはプレースホルダーの座標を取得して `TextRenderer.render_table()` を呼び出す（パターンB・Dで使用） |
-| `_write_via_textbox` | `slide`, `role: str`, `layout_def: LayoutDef`, `element: Element` | `None` | `LayoutDef.placeholders` を `role` で線形探索して座標情報を取得し、テキスト系ノードは `add_textbox()` で作成したshapeを `TextRenderer` の対応メソッドに渡して書き込む。テーブルノードは `TextRenderer.render_table()` に座標を渡す（パターンA・C・Dで使用） |
+| `_write_via_placeholder` | `slide`, `idx: int`, `node: DOMNodeInfo`, `layout_name: str`, `incremental: bool` | `None` | `slide.placeholders[idx]` を取得し、テキスト系ノードはそのshapeを `TextRenderer` の対応メソッドに渡してコンテンツを書き込む。テーブルノードはプレースホルダーの座標を取得して `TextRenderer.render_table()` を呼び出す。`incremental` はリスト描画時に `render_list` へ渡す（パターンB・Dで使用） |
+| `_write_via_textbox` | `slide`, `role: str`, `layout_def: LayoutDef`, `node: DOMNodeInfo`, `incremental: bool` | `None` | `LayoutDef.placeholders` を `role` で線形探索して座標情報を取得し、テキスト系ノードは `add_textbox()` で作成したshapeを `TextRenderer` の対応メソッドに渡して書き込む。テーブルノードは `TextRenderer.render_table()` に座標を渡す。`incremental` はリスト描画時に `render_list` へ渡す（パターンA・C・Dで使用） |
+
+**`_render_nodes` のノード処理方針：**
+
+| ノード種別 | `slide_level: 2` | `slide_level: 1` |
+|---|---|---|
+| H1 | スキップ（タイトルとして処理済み） | スキップ（タイトルとして処理済み） |
+| H2 | スキップ（タイトルとして処理済み） | 本文コンテンツとして `_render_body_node` へ渡す |
+| その他 | `_render_body_node` へ渡す | `_render_body_node` へ渡す |
 
 **プレースホルダーパターン適用方針：**
 
@@ -479,10 +519,9 @@ flowchart TD
     tr --> models
     mr --> models
     fr --> models
-    pre --> models
 ```
 
-`models.py` は全モジュールから参照される共有データ定義であり、パッケージ内の他モジュールへの依存を持たない。`mcp_server.py` はライブラリのエントリーポイントである `__init__.py` の `render()` 関数を呼び出す。
+`models.py` は全モジュールから参照される共有データ定義であり、パッケージ内の他モジュールへの依存を持たない。`preprocessor.py` は正規表現処理のみを行うため `models.py` に依存しない。`mcp_server.py` はライブラリのエントリーポイントである `__init__.py` の `render()` 関数を呼び出す。
 
 ---
 

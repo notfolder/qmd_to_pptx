@@ -1,0 +1,439 @@
+"""
+FlowchartRenderer の単体テスト。
+
+ノード形状14種類・エッジ矢印種別・線種・ラベル描画の動作を確認する。
+"""
+
+from __future__ import annotations
+
+import xml.etree.ElementTree as ET
+
+import pytest
+from pptx import Presentation
+from pptx.util import Emu
+
+from qmd_to_pptx.mermaid.flowchart import FlowchartRenderer, _SHAPE_MAP, _EDGE_ARROW_MAP
+from qmd_to_pptx.mermaid_renderer import MermaidRenderer
+
+
+def _make_slide():
+    """テスト用スライドを生成して返す。"""
+    prs = Presentation()
+    layout = prs.slide_layouts[5]  # Blankレイアウト
+    return prs.slides.add_slide(layout)
+
+
+def _make_mermaid_element(mermaid_text: str) -> ET.Element:
+    """テスト用Mermaid code要素を生成する。"""
+    elem = ET.Element("code")
+    elem.set("class", "language-mermaid")
+    elem.text = mermaid_text
+    return elem
+
+
+# ------------------------------------------------------------------
+# _SHAPE_MAP の定義テスト
+# ------------------------------------------------------------------
+
+class TestShapeMap:
+    """_SHAPE_MAPが全14種類のMermaidノード形状を網羅することを確認する。"""
+
+    _EXPECTED_TYPES = [
+        "square", "round", "stadium", "subroutine",
+        "cylinder", "circle", "odd", "diamond",
+        "hexagon", "lean_right", "lean_left",
+        "trapezoid", "inv_trapezoid", "doublecircle",
+    ]
+
+    def test_all_14_types_defined(self) -> None:
+        """_SHAPE_MAPがMermaid標準14種のノード形状すべてを含む。"""
+        for node_type in self._EXPECTED_TYPES:
+            assert node_type in _SHAPE_MAP, f"{node_type} が _SHAPE_MAP に定義されていない"
+
+    def test_shape_type_values_are_positive_int(self) -> None:
+        """_SHAPE_MAPの値は正の整数（MSO_AUTO_SHAPE_TYPE）であること。"""
+        for node_type, shape_val in _SHAPE_MAP.items():
+            assert isinstance(shape_val, int) and shape_val > 0, (
+                f"{node_type} のシェイプ値 {shape_val} が正の整数でない"
+            )
+
+
+# ------------------------------------------------------------------
+# _EDGE_ARROW_MAP の定義テスト
+# ------------------------------------------------------------------
+
+class TestEdgeArrowMap:
+    """_EDGE_ARROW_MAPが全7種類のMermaidエッジ矢印種別を網羅することを確認する。"""
+
+    _EXPECTED_TYPES = [
+        "arrow_open", "arrow_point", "double_arrow_point",
+        "arrow_circle", "double_arrow_circle",
+        "arrow_cross", "double_arrow_cross",
+    ]
+
+    def test_all_7_types_defined(self) -> None:
+        """_EDGE_ARROW_MAPがMermaid標準7種のエッジタイプすべてを含む。"""
+        for edge_type in self._EXPECTED_TYPES:
+            assert edge_type in _EDGE_ARROW_MAP, (
+                f"{edge_type} が _EDGE_ARROW_MAP に定義されていない"
+            )
+
+    def test_arrow_point_has_tailend(self) -> None:
+        """通常矢印（arrow_point）はtailEndを持つ（OOXML: tailEnd がendCxn/dst側に矢印）。"""
+        assert "tailEnd" in _EDGE_ARROW_MAP["arrow_point"]
+
+    def test_double_arrow_point_has_both_ends(self) -> None:
+        """両方向矢印（double_arrow_point）はheadEndとtailEndを持つ。"""
+        conf = _EDGE_ARROW_MAP["double_arrow_point"]
+        assert "headEnd" in conf
+        assert "tailEnd" in conf
+
+    def test_arrow_open_has_no_ends(self) -> None:
+        """開放矢印（arrow_open）は矢印指定なし。"""
+        assert _EDGE_ARROW_MAP["arrow_open"] == {}
+
+
+# ------------------------------------------------------------------
+# FlowchartRenderer クラスのテスト
+# ------------------------------------------------------------------
+
+class TestFlowchartRenderer:
+    """FlowchartRenderer の描画メソッドを確認する。"""
+
+    def setup_method(self) -> None:
+        """テスト前にFlowchartRendererインスタンスを生成する。"""
+        self.renderer = FlowchartRenderer()
+
+    def _make_graph_data(
+        self,
+        vertices: dict,
+        edges: list[dict] | None = None,
+    ) -> dict:
+        """テスト用のgraph_data辞書を生成する。"""
+        return {
+            "vertices": vertices,
+            "edges": edges or [],
+        }
+
+    def test_render_single_node_does_not_raise(self) -> None:
+        """単一ノードをレンダリングしても例外が発生しない。"""
+        slide = _make_slide()
+        graph_data = self._make_graph_data({"A": {"text": "開始", "type": "circle"}})
+        self.renderer.render(slide, graph_data, "fallback", Emu(0), Emu(0), Emu(9000000), Emu(5000000))
+
+    def test_render_adds_node_shapes(self) -> None:
+        """ノードがスライドに追加されることを確認する。"""
+        slide = _make_slide()
+        initial = len(slide.shapes)
+        graph_data = self._make_graph_data({
+            "A": {"text": "A", "type": "square"},
+            "B": {"text": "B", "type": "diamond"},
+        })
+        self.renderer.render(slide, graph_data, "", Emu(0), Emu(0), Emu(9000000), Emu(5000000))
+        # 2ノード分のShapeが追加される（コネクターは含まない）
+        assert len(slide.shapes) >= initial + 2
+
+    def test_render_edge_adds_connector(self) -> None:
+        """エッジがコネクターとして追加されることを確認する。"""
+        slide = _make_slide()
+        initial = len(slide.shapes)
+        graph_data = self._make_graph_data(
+            vertices={"A": {"text": "A", "type": "square"}, "B": {"text": "B", "type": "square"}},
+            edges=[{"start": "A", "end": "B", "stroke": "normal", "type": "arrow_point", "text": ""}],
+        )
+        self.renderer.render(slide, graph_data, "", Emu(0), Emu(0), Emu(9000000), Emu(5000000))
+        # 2ノード + 1コネクター以上のShapeが追加される
+        assert len(slide.shapes) >= initial + 3
+
+    def test_render_invisible_edge_skips_connector(self) -> None:
+        """invisible エッジはコネクターを生成しない。"""
+        slide = _make_slide()
+        initial = len(slide.shapes)
+        graph_data = self._make_graph_data(
+            vertices={"A": {"text": "A", "type": "square"}, "B": {"text": "B", "type": "square"}},
+            edges=[{"start": "A", "end": "B", "stroke": "invisible", "type": "arrow_point", "text": ""}],
+        )
+        self.renderer.render(slide, graph_data, "", Emu(0), Emu(0), Emu(9000000), Emu(5000000))
+        # コネクターなしのため追加されるのは2ノード分のみ（コネクター0個）
+        added = len(slide.shapes) - initial
+        assert added == 2
+
+    def test_render_edge_with_label_sets_connector_label(self) -> None:
+        """ラベル付きエッジが始点近くにテキストボックスとして配置され、
+        コネクターとグループ化されることを確認する。"""
+        slide = _make_slide()
+        initial = len(slide.shapes)
+        graph_data = self._make_graph_data(
+            vertices={"A": {"text": "A", "type": "square"}, "B": {"text": "B", "type": "square"}},
+            edges=[{"start": "A", "end": "B", "stroke": "normal", "type": "arrow_point", "text": "条件"}],
+        )
+        self.renderer.render(slide, graph_data, "", Emu(0), Emu(0), Emu(9000000), Emu(5000000))
+        # 2ノード（個別） + 1グループ（コネクター + ラベルテキストボックス） = 3追加
+        assert len(slide.shapes) == initial + 3
+        # グループ内にラベルテキスト「条件」が含まれることを確認する
+        from pptx.oxml.ns import qn as _qn
+        spTree = slide.shapes._spTree
+        grp_texts = []
+        for grpSp in spTree.findall(_qn("p:grpSp")):
+            for t_el in grpSp.iter(_qn("a:t")):
+                grp_texts.append(t_el.text or "")
+        assert any("条件" in t for t in grp_texts), f"グループ内にラベルが見つからない: {grp_texts}"
+
+    def test_render_fallback_on_empty_vertices(self) -> None:
+        """vertices が空の場合はフォールバック（テキストボックス）が追加される。"""
+        slide = _make_slide()
+        initial = len(slide.shapes)
+        graph_data = self._make_graph_data(vertices={})
+        self.renderer.render(slide, graph_data, "fallback text", Emu(0), Emu(0), Emu(9000000), Emu(5000000))
+        assert len(slide.shapes) >= initial + 1
+
+    @pytest.mark.parametrize("node_type", [
+        "square", "round", "stadium", "subroutine",
+        "cylinder", "circle", "odd", "diamond",
+        "hexagon", "lean_right", "lean_left",
+        "trapezoid", "inv_trapezoid", "doublecircle",
+    ])
+    def test_render_all_node_shapes(self, node_type: str) -> None:
+        """全14種類のノード形状を持つフローチャートがエラーなく描画できる。"""
+        slide = _make_slide()
+        graph_data = self._make_graph_data({"X": {"text": "テスト", "type": node_type}})
+        # 例外なく完了することを確認する
+        self.renderer.render(slide, graph_data, "", Emu(0), Emu(0), Emu(9000000), Emu(5000000))
+        assert len(slide.shapes) >= 1
+
+    @pytest.mark.parametrize("stroke", ["normal", "dotted", "thick"])
+    def test_render_edge_stroke_types(self, stroke: str) -> None:
+        """normal/dotted/thick の各線種でエラーなく描画できる。"""
+        slide = _make_slide()
+        graph_data = self._make_graph_data(
+            vertices={"A": {"text": "A", "type": "square"}, "B": {"text": "B", "type": "square"}},
+            edges=[{"start": "A", "end": "B", "stroke": stroke, "type": "arrow_point", "text": ""}],
+        )
+        self.renderer.render(slide, graph_data, "", Emu(0), Emu(0), Emu(9000000), Emu(5000000))
+
+    @pytest.mark.parametrize("edge_type", [
+        "arrow_open", "arrow_point", "double_arrow_point",
+        "arrow_circle", "double_arrow_circle",
+        "arrow_cross", "double_arrow_cross",
+    ])
+    def test_render_all_edge_arrow_types(self, edge_type: str) -> None:
+        """全7種類のエッジ矢印種別でエラーなく描画できる。"""
+        slide = _make_slide()
+        graph_data = self._make_graph_data(
+            vertices={"A": {"text": "A", "type": "square"}, "B": {"text": "B", "type": "square"}},
+            edges=[{"start": "A", "end": "B", "stroke": "normal", "type": edge_type, "text": ""}],
+        )
+        self.renderer.render(slide, graph_data, "", Emu(0), Emu(0), Emu(9000000), Emu(5000000))
+
+
+# ------------------------------------------------------------------
+# MermaidRenderer からの統合テスト（flowchart経由）
+# ------------------------------------------------------------------
+
+class TestMermaidRendererFlowchart:
+    """MermaidRenderer 経由でのフローチャート描画を確認する。"""
+
+    def setup_method(self) -> None:
+        """テスト前にMermaidRendererインスタンスを生成する。"""
+        self.renderer = MermaidRenderer()
+
+    def test_flowchart_with_diamond_node(self) -> None:
+        """ひし形ノードを含むフローチャートが例外なく描画できる。"""
+        slide = _make_slide()
+        elem = _make_mermaid_element("flowchart LR\n    A[開始] --> B{判定}\n    B --> C[終了]")
+        self.renderer.render(
+            slide, elem,
+            Emu(500000), Emu(500000), Emu(7000000), Emu(4000000)
+        )
+        assert len(slide.shapes) > 0
+
+    def test_flowchart_with_edge_label(self) -> None:
+        """ラベル付きエッジを含むフローチャートが例外なく描画できる。"""
+        slide = _make_slide()
+        elem = _make_mermaid_element(
+            "flowchart LR\n    A --> |条件| B"
+        )
+        self.renderer.render(
+            slide, elem,
+            Emu(500000), Emu(500000), Emu(7000000), Emu(4000000)
+        )
+        assert len(slide.shapes) > 0
+
+    def test_flowchart_dotted_edge(self) -> None:
+        """点線エッジを含むフローチャートが例外なく描画できる。"""
+        slide = _make_slide()
+        elem = _make_mermaid_element(
+            "flowchart LR\n    A -.-> B"
+        )
+        self.renderer.render(
+            slide, elem,
+            Emu(500000), Emu(500000), Emu(7000000), Emu(4000000)
+        )
+        assert len(slide.shapes) > 0
+
+
+# ------------------------------------------------------------------
+# _extract_direction のテスト
+# ------------------------------------------------------------------
+
+class TestExtractDirection:
+    """_extract_directionが描画方向を正しく抽出することを確認する。"""
+
+    def setup_method(self) -> None:
+        self.renderer = FlowchartRenderer()
+
+    def test_flowchart_td(self) -> None:
+        """'flowchart TD' から 'TD' を返す。"""
+        assert self.renderer._extract_direction("flowchart TD\n  A --> B") == "TD"
+
+    def test_flowchart_lr(self) -> None:
+        """'flowchart LR' から 'LR' を返す。"""
+        assert self.renderer._extract_direction("flowchart LR\n  A --> B") == "LR"
+
+    def test_graph_bt(self) -> None:
+        """'graph BT' から 'BT' を返す。"""
+        assert self.renderer._extract_direction("graph BT\n  A --> B") == "BT"
+
+    def test_graph_rl(self) -> None:
+        """'graph RL' から 'RL' を返す。"""
+        assert self.renderer._extract_direction("graph RL\n  A --> B") == "RL"
+
+    def test_case_insensitive(self) -> None:
+        """方向指定は大文字小文字を区別しない。"""
+        assert self.renderer._extract_direction("flowchart lr\n  A --> B") == "LR"
+
+    def test_default_td_when_no_direction(self) -> None:
+        """方向指定がない場合はデフォルト 'TD' を返す。"""
+        assert self.renderer._extract_direction("flowchart\n  A --> B") == "TD"
+
+    def test_default_td_when_empty(self) -> None:
+        """空文字列の場合はデフォルト 'TD' を返す。"""
+        assert self.renderer._extract_direction("") == "TD"
+
+
+# ------------------------------------------------------------------
+# _hierarchical_layout のテスト
+# ------------------------------------------------------------------
+
+class TestHierarchicalLayout:
+    """_hierarchical_layoutがDAG階層レイアウトを正しく計算することを確認する。"""
+
+    def setup_method(self) -> None:
+        import networkx as nx
+        self.renderer = FlowchartRenderer()
+        self.nx = nx
+
+    def _make_dag(self, edges: list[tuple[str, str]]) -> object:
+        G = self.nx.DiGraph()
+        for src, dst in edges:
+            G.add_edge(src, dst)
+        return G
+
+    def test_linear_dag_td(self) -> None:
+        """A→B→C のTD配置でA,B,Cが上から下に並ぶこと。"""
+        G = self._make_dag([("A", "B"), ("B", "C")])
+        pos = self.renderer._hierarchical_layout(G, "TD")
+        # TD: y座標がA < B < C（上→下）
+        assert pos["A"][1] < pos["B"][1] < pos["C"][1]
+
+    def test_linear_dag_bt(self) -> None:
+        """BTではy座標が反転してA > B > C になること。"""
+        G = self._make_dag([("A", "B"), ("B", "C")])
+        pos = self.renderer._hierarchical_layout(G, "BT")
+        assert pos["A"][1] > pos["B"][1] > pos["C"][1]
+
+    def test_linear_dag_lr(self) -> None:
+        """LRではx座標がA < B < C になること。"""
+        G = self._make_dag([("A", "B"), ("B", "C")])
+        pos = self.renderer._hierarchical_layout(G, "LR")
+        assert pos["A"][0] < pos["B"][0] < pos["C"][0]
+
+    def test_linear_dag_rl(self) -> None:
+        """RLではx座標がA > B > C になること。"""
+        G = self._make_dag([("A", "B"), ("B", "C")])
+        pos = self.renderer._hierarchical_layout(G, "RL")
+        assert pos["A"][0] > pos["B"][0] > pos["C"][0]
+
+    def test_all_nodes_in_range(self) -> None:
+        """全ノードの座標が -1.0〜1.0 の範囲内であること。"""
+        G = self._make_dag([("A", "B"), ("A", "C"), ("B", "D")])
+        pos = self.renderer._hierarchical_layout(G, "TD")
+        for node_id, (x, y) in pos.items():
+            assert -1.0 <= x <= 1.0, f"{node_id} の x={x} が範囲外"
+            assert -1.0 <= y <= 1.0, f"{node_id} の y={y} が範囲外"
+
+    def test_cyclic_graph_fallback(self) -> None:
+        """サイクルを含むグラフはフォールバックして例外を起こさないこと。"""
+        G = self.nx.DiGraph()
+        G.add_edges_from([("A", "B"), ("B", "C"), ("C", "A")])
+        pos = self.renderer._hierarchical_layout(G, "TD")
+        # フォールバックでも全ノードの座標が返ること
+        assert set(pos.keys()) == {"A", "B", "C"}
+
+    def test_wrap_td_large_generation(self) -> None:
+        """TD方向でcanvas_wが狭い場合、1世代が複数サブレベルに折り返される。"""
+        # NODE_WIDTH_EMU=1200000 で canvas_w=2500000 → max_per_level=2
+        G = self.nx.DiGraph()
+        G.add_nodes_from(["A", "B", "C", "D"])  # 全ノード同一世代（エッジなし）
+        pos = self.renderer._hierarchical_layout(G, "TD", canvas_w=2500000)
+        # 4ノードがmax=2で折り返される → 2サブレベル → Y座標が2種類存在する
+        y_values = sorted(set(round(pos[n][1], 6) for n in pos))
+        assert len(y_values) == 2, f"折り返し後のサブレベル数が2でない: {y_values}"
+
+    def test_wrap_lr_large_generation(self) -> None:
+        """LR方向でcanvas_hが小さい場合、1世代が複数サブレベルに折り返される。"""
+        # NODE_HEIGHT_EMU=500000 で canvas_h=1100000 → max_per_level=2
+        G = self.nx.DiGraph()
+        G.add_nodes_from(["A", "B", "C"])
+        pos = self.renderer._hierarchical_layout(G, "LR", canvas_h=1100000)
+        # 3ノードがmax=2で折り返される → X座標が2種類存在する
+        x_values = sorted(set(round(pos[n][0], 6) for n in pos))
+        assert len(x_values) == 2, f"折り返し後のサブレベル数が2でない: {x_values}"
+
+    def test_wrap_partial_row_centered(self) -> None:
+        """折り返し後の部分行（最終行）はX=0に中央揃えされる。"""
+        # NODE_WIDTH_EMU=1200000, canvas_w=2500000 → max_per_level=2
+        # 3ノード → [A,B] + [C] → 最終行のCはspan_norm=0
+        G = self.nx.DiGraph()
+        G.add_nodes_from(["A", "B", "C"])
+        pos = self.renderer._hierarchical_layout(G, "TD", canvas_w=2500000)
+        # 最終行ノード（1ノード）はX=0に配置される
+        y_vals = sorted(set(round(pos[n][1], 6) for n in pos))
+        last_y = y_vals[-1]
+        last_row_nodes = [n for n in pos if round(pos[n][1], 6) == last_y]
+        assert len(last_row_nodes) == 1
+        assert abs(pos[last_row_nodes[0]][0]) < 1e-9, "部分行の単独ノードがX=0でない"
+
+    def test_no_wrap_when_no_canvas(self) -> None:
+        """canvas引数未指定時は折り返しなし（従来の挙動を維持）。"""
+        G = self.nx.DiGraph()
+        G.add_nodes_from(["A", "B", "C", "D", "E"])
+        pos = self.renderer._hierarchical_layout(G, "TD")
+        # 全ノード同一世代 → 折り返しなし → Y座標が全て同じ
+        y_values = set(round(pos[n][1], 6) for n in pos)
+        assert len(y_values) == 1, "canvas未指定なのに折り返しが発生した"
+
+    def test_lane_wrap_lr_chain(self) -> None:
+        """LR方向のチェーンでcanvas_w不足時にレーン折り返しが発生する。"""
+        # NODE_WIDTH_EMU=1200000, canvas_w=3700000 → max_levels=3
+        # 13ノード線形チェーン → 13世代 → 3世代ずつ折り返し → 複数のY値
+        G = self.nx.DiGraph()
+        nodes = list("ABCDEFGHIJKLMN")  # 14ノード
+        for i in range(len(nodes) - 1):
+            G.add_edge(nodes[i], nodes[i + 1])
+        pos = self.renderer._hierarchical_layout(G, "LR", canvas_w=3700000, canvas_h=4000000)
+        # レーン折り返しが発生していればY座標が複数種類存在する
+        y_values = set(round(pos[n][1], 6) for n in pos)
+        assert len(y_values) > 1, f"LRチェーンのレーン折り返しが発生していない: {pos}"
+
+    def test_lane_wrap_td_chain(self) -> None:
+        """TD方向のチェーンでcanvas_h不足時にレーン折り返しが発生する。"""
+        # NODE_HEIGHT_EMU=500000, canvas_h=1600000 → max_levels=3
+        # 10ノード線形チェーン → 10世代 → 3世代ずつ折り返し → 複数のX値
+        G = self.nx.DiGraph()
+        nodes = list("ABCDEFGHIJ")
+        for i in range(len(nodes) - 1):
+            G.add_edge(nodes[i], nodes[i + 1])
+        pos = self.renderer._hierarchical_layout(G, "TD", canvas_w=6000000, canvas_h=1600000)
+        x_values = set(round(pos[n][0], 6) for n in pos)
+        assert len(x_values) > 1, f"TDチェーンのレーン折り返しが発生していない: {pos}"

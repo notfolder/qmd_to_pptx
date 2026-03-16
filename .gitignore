@@ -205,3 +205,6 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# generate_default_layout.py の出力ファイル（開発用スクリプトの生成物。パッケージ外）
+/default_layout.json
