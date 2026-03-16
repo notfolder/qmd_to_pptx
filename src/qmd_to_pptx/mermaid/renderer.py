@@ -18,6 +18,8 @@ from .er_diagram import ErDiagramRenderer
 from .flowchart import FlowchartRenderer
 from .gantt_parser import parse_gantt
 from .gantt_renderer import GanttRenderer
+from .journey_parser import parse_journey
+from .journey_renderer import JourneyRenderer
 from .mindmap import MindmapRenderer
 from .pie_parser import parse_pie
 from .pie_renderer import PieChartRenderer
@@ -43,6 +45,7 @@ class MermaidRenderer:
         self._mindmap = MindmapRenderer()
         self._sequence = SequenceDiagramRenderer()
         self._gantt = GanttRenderer()
+        self._journey = JourneyRenderer()
         self._pie = PieChartRenderer()
         # フォールバック描画は BaseDiagramRenderer に委ねる
         self._base = BaseDiagramRenderer()
@@ -95,6 +98,17 @@ class MermaidRenderer:
                 self._base._render_fallback(slide, mermaid_text, left, top, width, height)
                 return
             self._pie.render(slide, pie_chart, left, top, width, height)
+            return
+
+        # journey は mermaid-parser-py が graph_data を空で返すため、
+        # パーサー呼び出し前にカスタムパーサーへ直接委譲する
+        if first_line.startswith("journey"):
+            try:
+                journey_chart = parse_journey(mermaid_text)
+            except Exception:
+                self._base._render_fallback(slide, mermaid_text, left, top, width, height)
+                return
+            self._journey.render(slide, journey_chart, left, top, width, height)
             return
 
         # gantt は mermaid-parser-py が graph_data を返せないため、
