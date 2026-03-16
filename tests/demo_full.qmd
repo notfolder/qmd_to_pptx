@@ -323,9 +323,7 @@ journey
         注文完了      : 5: ユーザー
 ```
 
-## 8. 円グラフ（Pie Chart）
-
-パーセント表示のみ（showData なし）:
+## 8a. 円グラフ（Pie Chart） - パーセント表示（showData なし）
 
 ```mermaid
 pie title 言語別コード比率
@@ -336,7 +334,7 @@ pie title 言語別コード比率
     "その他" : 5
 ```
 
-パーセント + 実数値表示（showData あり）:
+## 8b. 円グラフ（Pie Chart） - パーセント + 実数値表示（showData あり）:
 
 ```mermaid
 pie showData title 売上内訳（百万円）
