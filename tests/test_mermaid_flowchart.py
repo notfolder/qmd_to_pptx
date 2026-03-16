@@ -78,9 +78,9 @@ class TestEdgeArrowMap:
                 f"{edge_type} が _EDGE_ARROW_MAP に定義されていない"
             )
 
-    def test_arrow_point_has_headend(self) -> None:
-        """通常矢印（arrow_point）はheadEndを持つ。"""
-        assert "headEnd" in _EDGE_ARROW_MAP["arrow_point"]
+    def test_arrow_point_has_tailend(self) -> None:
+        """通常矢印（arrow_point）はtailEndを持つ（OOXML: tailEnd がendCxn/dst側に矢印）。"""
+        assert "tailEnd" in _EDGE_ARROW_MAP["arrow_point"]
 
     def test_double_arrow_point_has_both_ends(self) -> None:
         """両方向矢印（double_arrow_point）はheadEndとtailEndを持つ。"""

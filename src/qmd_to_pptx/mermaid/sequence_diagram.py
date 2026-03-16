@@ -1107,12 +1107,14 @@ class SequenceDiagramRenderer(BaseDiagramRenderer):
             prstDash.set("val", "dash")
 
         # 矢印の先端形状を設定する
+        # tailEnd = endCxn（end_connect側 = dst受信者）に矢印を付ける → 正しい向き
+        # headEnd = stCxn（begin_connect側 = src送信者）に矢印を付ける → 逆向き
         if msg_type in (_LT_SOLID_OPEN, _LT_DOTTED_OPEN):
-            # 非同期メッセージ: 開き矢印
-            head = lxml_etree.SubElement(ln_el, qn("a:headEnd"))
-            head.set("type", "open")
-            head.set("w", "med")
-            head.set("len", "med")
+            # 非同期メッセージ: 開き矢印（dst側）
+            tail = lxml_etree.SubElement(ln_el, qn("a:tailEnd"))
+            tail.set("type", "open")
+            tail.set("w", "med")
+            tail.set("len", "med")
 
         elif msg_type in (_LT_BIDIR_SOLID, _LT_BIDIR_DOTTED):
             # 双方向矢印: 両端に矢印を設定する
@@ -1130,11 +1132,11 @@ class SequenceDiagramRenderer(BaseDiagramRenderer):
             _LT_SOLID_CROSS, _LT_DOTTED_CROSS,
             _LT_SOLID_POINT, _LT_DOTTED_POINT,
         ):
-            # 標準矢印: 塗り矢印（stealth）
-            head = lxml_etree.SubElement(ln_el, qn("a:headEnd"))
-            head.set("type", "stealth")
-            head.set("w", "med")
-            head.set("len", "med")
+            # 標準矢印: 塗り矢印（stealth）をdst側（tailEnd）に設定する
+            tail = lxml_etree.SubElement(ln_el, qn("a:tailEnd"))
+            tail.set("type", "stealth")
+            tail.set("w", "med")
+            tail.set("len", "med")
 
         # _LT_SOLID_POINT (24) / _LT_DOTTED_POINT (25) は矢印なし（->）相当だが
         # OOXML上はtype0と区別できないため同じ stealthを設定する

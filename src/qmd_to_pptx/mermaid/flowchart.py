@@ -41,15 +41,17 @@ _SHAPE_MAP: dict[str, int] = {
 
 # ---------------------- エッジ矢印マップ ----------------------
 # mermaid-parser-py の edge["type"] → headEnd/tailEnd 設定辞書
-# headEnd: コネクター終点（dst側）の矢印種別
-# tailEnd: コネクター始点（src側）の矢印種別（両方向エッジのみ）
+# OOXMLの矢印配置:
+#   tailEnd = コネクターパスの「終端」(endCxn/end_connect側 = 目的地B) に矢印を付加する。
+#   headEnd = コネクターパスの「始端」(stCxn/begin_connect側 = 始点A) に矢印を付加する。
+# 通常の有向矢印（A→B）では tailEnd を使って目的地（B）の接続点に矢印を配置する。
 _EDGE_ARROW_MAP: dict[str, dict[str, str]] = {
     "arrow_open":          {},                                      # 矢印なし（開放線）
-    "arrow_point":         {"headEnd": "arrow"},                    # →（通常矢印）
+    "arrow_point":         {"tailEnd": "arrow"},                    # →（通常矢印: dst側）
     "double_arrow_point":  {"headEnd": "arrow", "tailEnd": "arrow"}, # ←→（両方向）
-    "arrow_circle":        {"headEnd": "oval"},                     # 丸端矢印
+    "arrow_circle":        {"tailEnd": "oval"},                     # 丸端矢印（dst側）
     "double_arrow_circle": {"headEnd": "oval", "tailEnd": "oval"},  # 両方向丸端
-    "arrow_cross":         {"headEnd": "arrow"},                    # ×端（arrow で代替）
+    "arrow_cross":         {"tailEnd": "arrow"},                    # ×端（arrow で代替, dst側）
     "double_arrow_cross":  {"headEnd": "arrow", "tailEnd": "arrow"},# 両方向×端
 }
 

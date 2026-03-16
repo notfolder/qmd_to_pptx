@@ -956,7 +956,10 @@ class StateDiagramRenderer(BaseDiagramRenderer):
 
     def _apply_arrow_to_connector(self, connector: object) -> None:
         """
-        コネクターの OOXML <a:ln> に headEnd 矢印スタイルを設定する。
+        コネクターの OOXML <a:ln> に tailEnd 矢印スタイルを設定する。
+
+        OOXML では tailEnd がコネクターパスの終端（endCxn/end_connect側 = 目的地）に矢印を出す。
+        headEnd は始端（stCxn/begin_connect側 = 始点）側になるため、有向矢印には tailEnd を使用する。
 
         Parameters
         ----------
@@ -970,7 +973,7 @@ class StateDiagramRenderer(BaseDiagramRenderer):
         ln = spPr.find(qn("a:ln"))
         if ln is None:
             ln = lxml_etree.SubElement(spPr, qn("a:ln"))
-        head = lxml_etree.SubElement(ln, qn("a:headEnd"))
-        head.set("type", "arrow")
-        head.set("w", "med")
-        head.set("len", "med")
+        tail = lxml_etree.SubElement(ln, qn("a:tailEnd"))
+        tail.set("type", "arrow")
+        tail.set("w", "med")
+        tail.set("len", "med")

@@ -81,11 +81,12 @@ class BaseDiagramRenderer:
         """
         方向ベクトル (dx, dy) から始点・終点の接続ポイントインデックスを決定する。
 
-        DrawingML 標準矩形の接続ポイントは以下のとおり。
+        python-pptx の begin_connect/end_connect に渡すインデックスの実態は
+        ECMA-376 のプリセット定義と一部異なる。矩形・丸角矩形等の標準形状では：
         - 0: 上辺中点
-        - 1: 右辺中点
+        - 1: 左辺中点  ← ECMA-376 の idx=1(右) ではなく左
         - 2: 下辺中点
-        - 3: 左辺中点
+        - 3: 右辺中点  ← ECMA-376 の idx=3(左) ではなく右
 
         Parameters
         ----------
@@ -101,19 +102,21 @@ class BaseDiagramRenderer:
         """
         if abs(dx) >= abs(dy):
             # 水平方向が支配的な場合
+            # python-pptx の接続ポイントインデックス実態（ECMA-376 と異なる）:
+            #   idx=0: 上辺中点, idx=1: 左辺中点, idx=2: 下辺中点, idx=3: 右辺中点
             if dx >= 0:
-                # 左から右: src右辺 → dst左辺
-                return (1, 3)
-            else:
-                # 右から左: src左辺 → dst右辺
+                # 左から右: src右辺(idx=3) → dst左辺(idx=1)
                 return (3, 1)
+            else:
+                # 右から左: src左辺(idx=1) → dst右辺(idx=3)
+                return (1, 3)
         else:
             # 垂直方向が支配的な場合
             if dy >= 0:
-                # 上から下: src下辺 → dst上辺
+                # 上から下: src下辺(idx=2) → dst上辺(idx=0)
                 return (2, 0)
             else:
-                # 下から上: src上辺 → dst下辺
+                # 下から上: src上辺(idx=0) → dst下辺(idx=2)
                 return (0, 2)
 
     def _draw_nodes(
