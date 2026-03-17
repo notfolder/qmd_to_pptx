@@ -73,8 +73,8 @@ _RE_TASK = re.compile(
     r"^\s*(?P<name>[^:]+?)\s*:\s*(?P<score>\d+)(?:\s*:\s*(?P<actors>.+))?\s*$"
 )
 
-# コメント行（"%%"で始まる）
-_RE_COMMENT = re.compile(r"^\s*%%")
+# コメント行（"%%"で始まる、または "#" で始まる）
+_RE_COMMENT = re.compile(r"^\s*(?:%%|#)")
 
 # アクセシビリティ記述行（"accTitle:" / "accDescr:" / "accDescr{{"）をスキップ
 _RE_ACC = re.compile(r"^\s*acc(?:Title|Descr)\b", re.IGNORECASE)

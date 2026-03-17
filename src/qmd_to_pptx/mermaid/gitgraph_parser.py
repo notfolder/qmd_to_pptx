@@ -53,7 +53,9 @@ class GitCommit:
     commit_type : str
         コミットタイプ文字列。NORMAL / REVERSE / HIGHLIGHT / MERGE / CHERRY_PICK のいずれか。
     tag : str | None
-        タグ文字列（例: "v1.0.0"）。指定がない場合は None。
+        タグ文字列（後方互換用・1個目のタグ）。指定がない場合は None。
+    tags : list[str]
+        タグ文字列リスト。`tag:` を複数指定した場合も全て格納する。
     msg : str | None
         コミットメッセージ。表示ラベルは commit_id を優先し、なければ msg を使う。
     branch : str
@@ -67,6 +69,7 @@ class GitCommit:
     commit_id: str
     commit_type: str = "NORMAL"     # NORMAL / REVERSE / HIGHLIGHT / MERGE / CHERRY_PICK
     tag: str | None = None
+    tags: list[str] = field(default_factory=list)
     msg: str | None = None
     branch: str = "main"
     parents: list[str] = field(default_factory=list)
@@ -125,9 +128,16 @@ _RE_HEADER = re.compile(
 
 # commit 行から各属性を抽出する（id/msg/type/tag の任意組み合わせ）
 _RE_COMMIT_ID   = re.compile(r'\bid\s*:\s*"(?P<v>[^"]*)"|\bid\s*:\s*\'(?P<v2>[^\']*)\'' )
-_RE_COMMIT_MSG  = re.compile(r'\bmsg\s*:\s*"(?P<v>[^"]*)"|\bmsg\s*:\s*\'(?P<v2>[^\']*)\'' )
+# msg: キーワードあり形式（優先）: msg: "..." / msg: '...'
+_RE_COMMIT_MSG_KEYED = re.compile(r'\bmsg\s*:\s*"(?P<v>[^"]*)"|\bmsg\s*:\s*\'(?P<v2>[^\']*)\'' )
 _RE_COMMIT_TYPE = re.compile(r'\btype\s*:\s*(?P<v>NORMAL|REVERSE|HIGHLIGHT)\b', re.IGNORECASE)
 _RE_COMMIT_TAG  = re.compile(r'\btag\s*:\s*"(?P<v>[^"]*)"|\btag\s*:\s*\'(?P<v2>[^\']*)\'' )
+
+# キーワード付き属性（id:/msg:/type:/tag:/parent:）の除去パターン
+# commit "message" 形式（msg: なし）のメッセージ抽出時に使用する
+_RE_KEYED_ATTRS = re.compile(
+    r'\b(?:id|msg|type|tag|parent)\s*:\s*(?:"[^"]*"|\'[^\']*\')'
+)
 
 # branch 行: "branch <name> [order: <n>]"
 _RE_BRANCH = re.compile(
@@ -198,6 +208,64 @@ def _extract_quoted(pattern: re.Pattern[str], text: str) -> str | None:
     if not m:
         return None
     return m.group("v") if m.group("v") is not None else m.group("v2")
+
+
+def _extract_all_quoted(pattern: re.Pattern[str], text: str) -> list[str]:
+    """
+    正規表現パターンで文字列を全検索し、マッチした全ての値リストを返す。
+
+    Parameters
+    ----------
+    pattern : re.Pattern[str]
+        ダブルクォート用グループ `v` とシングルクォート用グループ `v2` を持つパターン。
+    text : str
+        検索対象テキスト。
+
+    Returns
+    -------
+    list[str]
+        マッチした全てのグループの値リスト。マッチなしの場合は空リスト。
+    """
+    results: list[str] = []
+    for m in pattern.finditer(text):
+        val = m.group("v") if m.group("v") is not None else m.group("v2")
+        if val is not None:
+            results.append(val)
+    return results
+
+
+def _extract_commit_msg(rest: str) -> str | None:
+    """
+    commit 行の残り部分からメッセージを抽出する。
+
+    まず `msg: "..."` 形式を試し、なければ `commit "..."` 形式（msg: なし）を試す。
+
+    Parameters
+    ----------
+    rest : str
+        "commit" キーワードより後ろのテキスト。
+
+    Returns
+    -------
+    str | None
+        抽出されたメッセージ文字列。見つからない場合は None。
+    """
+    # 優先: msg: キーワードあり形式
+    msg = _extract_quoted(_RE_COMMIT_MSG_KEYED, rest)
+    if msg is not None:
+        return msg
+
+    # msg: キーワードなし: id:/type:/tag: などのキーワードに紐づかない引用符文字列を探す
+    # キーワード付き属性を除去してから残りの引用符文字列を探す
+    cleaned = _RE_KEYED_ATTRS.sub("", rest)
+    # 残った引用符文字列がメッセージ
+    m = re.search(r'"(?P<v>[^"]*)"', cleaned)
+    if m:
+        return m.group("v")
+    m = re.search(r"'(?P<v>[^']*)'", cleaned)
+    if m:
+        return m.group("v")
+    return None
 
 
 def _auto_commit_id(branch: str, seq: int) -> str:
@@ -301,12 +369,15 @@ def parse_gitgraph(text: str, yaml_frontmatter: str = "") -> GitGraph:
             if cid is None:
                 cid = _auto_commit_id(current_branch, commit_seq)
 
-            msg = _extract_quoted(_RE_COMMIT_MSG, rest)
+            # msg: キーワードあり/なしの両形式に対応する
+            msg = _extract_commit_msg(rest)
 
             tm = _RE_COMMIT_TYPE.search(rest)
             ctype = tm.group("v").upper() if tm else "NORMAL"
 
-            tag = _extract_quoted(_RE_COMMIT_TAG, rest)
+            # 全ての tag: 属性を取得する（複数指定対応）
+            all_tags = _extract_all_quoted(_RE_COMMIT_TAG, rest)
+            tag = all_tags[0] if all_tags else None
 
             # 親コミットの確定（カレントブランチの先頭）
             parent_id = branch_heads.get(current_branch)
@@ -316,6 +387,7 @@ def parse_gitgraph(text: str, yaml_frontmatter: str = "") -> GitGraph:
                 commit_id=cid,
                 commit_type=ctype,
                 tag=tag,
+                tags=all_tags,
                 msg=msg,
                 branch=current_branch,
                 parents=parents,
@@ -362,7 +434,8 @@ def parse_gitgraph(text: str, yaml_frontmatter: str = "") -> GitGraph:
             tm = _RE_COMMIT_TYPE.search(rest)
             mtype = tm.group("v").upper() if tm else "MERGE"
 
-            mtag = _extract_quoted(_RE_COMMIT_TAG, rest)
+            all_mtags = _extract_all_quoted(_RE_COMMIT_TAG, rest)
+            mtag = all_mtags[0] if all_mtags else None
 
             # 親: [カレントブランチ先頭, マージ元ブランチ先頭]
             src_head = branch_heads.get(src_branch)
@@ -377,6 +450,7 @@ def parse_gitgraph(text: str, yaml_frontmatter: str = "") -> GitGraph:
                 commit_id=mid,
                 commit_type=mtype if mtype != "NORMAL" else "MERGE",
                 tag=mtag,
+                tags=all_mtags,
                 branch=current_branch,
                 parents=parents,
             )
@@ -396,6 +470,13 @@ def parse_gitgraph(text: str, yaml_frontmatter: str = "") -> GitGraph:
                 # cherry-pick id が指定されていない場合はスキップする
                 continue
 
+            # cherry-pick の tag: 属性を取得する（指定があればそれを使い、なければコピー元IDを使う）
+            cp_tag = _extract_quoted(_RE_COMMIT_TAG, rest)
+            cp_tags = _extract_all_quoted(_RE_COMMIT_TAG, rest)
+            if cp_tag is None:
+                cp_tag = src_id  # Mermaid 準拠: タグとしてコピー元IDを表示する
+                cp_tags = [src_id]
+
             # cherry-pick コミットの ID は自動生成する
             cp_id = _auto_commit_id(current_branch, commit_seq)
 
@@ -406,7 +487,8 @@ def parse_gitgraph(text: str, yaml_frontmatter: str = "") -> GitGraph:
             commit = GitCommit(
                 commit_id=cp_id,
                 commit_type="CHERRY_PICK",
-                tag=src_id,            # タグとしてコピー元IDを表示する（Mermaid準拠）
+                tag=cp_tag,
+                tags=cp_tags,
                 branch=current_branch,
                 parents=parents,
                 cherry_from=src_id,

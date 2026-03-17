@@ -108,14 +108,26 @@ _RE_HEADER = re.compile(r"^\s*quadrantChart\s*$", re.IGNORECASE)
 _RE_TITLE = re.compile(r"^\s*title\s+(.+)", re.IGNORECASE)
 
 # "x-axis <left> [-->  <right>]" 行
+# Mermaid では複数ダッシュ (--> / ---> / ----> 等) を許容する
 _RE_X_AXIS = re.compile(
-    r"^\s*x-axis\s+(?P<left>.+?)(?:\s*-->\s*(?P<right>.+))?\s*$",
+    r"^\s*x-axis\s+(?P<left>.+?)(?:\s*-{2,}>\s*(?P<right>.+))?\s*$",
     re.IGNORECASE,
 )
 
 # "y-axis <bottom> [--> <top>]" 行
+# 同様に複数ダッシュを許容する
 _RE_Y_AXIS = re.compile(
-    r"^\s*y-axis\s+(?P<bottom>.+?)(?:\s*-->\s*(?P<top>.+))?\s*$",
+    r"^\s*y-axis\s+(?P<bottom>.+?)(?:\s*-{2,}>\s*(?P<top>.+))?\s*$",
+    re.IGNORECASE,
+)
+
+# デリミタのみ形式（右ラベルなし）を検出するパターン: "x-axis <left> -->"
+_RE_X_AXIS_DELIMITER_ONLY = re.compile(
+    r"^\s*x-axis\s+(?P<left>.+?)\s*-{2,}>\s*$",
+    re.IGNORECASE,
+)
+_RE_Y_AXIS_DELIMITER_ONLY = re.compile(
+    r"^\s*y-axis\s+(?P<bottom>.+?)\s*-{2,}>\s*$",
     re.IGNORECASE,
 )
 
@@ -282,6 +294,14 @@ def parse_quadrant(text: str) -> QuadrantChart:
             continue
 
         # x-axis 行
+        # デリミタのみ形式（右ラベルなし: "x-axis Low -->"）を先に判定する
+        m = _RE_X_AXIS_DELIMITER_ONLY.match(line)
+        if m:
+            left_label = m.group("left").strip()
+            # mermaid.js 準拠: デリミタのみの場合は左ラベルに ⟶ を付加する
+            chart.x_label_left = f"{left_label} ⟶"
+            chart.x_label_right = ""
+            continue
         m = _RE_X_AXIS.match(line)
         if m:
             chart.x_label_left = m.group("left").strip()
@@ -290,6 +310,14 @@ def parse_quadrant(text: str) -> QuadrantChart:
             continue
 
         # y-axis 行
+        # デリミタのみ形式（下ラベルのみ: "y-axis Low -->"）を先に判定する
+        m = _RE_Y_AXIS_DELIMITER_ONLY.match(line)
+        if m:
+            bottom_label = m.group("bottom").strip()
+            # mermaid.js 準拠: デリミタのみの場合は下ラベルに ⟶ を付加する
+            chart.y_label_bottom = f"{bottom_label} ⟶"
+            chart.y_label_top = ""
+            continue
         m = _RE_Y_AXIS.match(line)
         if m:
             chart.y_label_bottom = m.group("bottom").strip()

@@ -70,6 +70,7 @@ class GanttChart:
     date_format: str
     excludes: list[str]
     sections: list[GanttSection]
+    inclusive_end_dates: bool = False  # inclusiveEndDates ディレクティブが宣言された場合 True
 
     def all_tasks(self) -> list[GanttTask]:
         """全セクションのタスクをフラットなリストで返す。"""
@@ -401,6 +402,7 @@ def _parse_task_line(
     task_end_map: dict[str, date],
     date_format: str,
     task_counter: list[int],
+    inclusive_end_dates: bool = False,
 ) -> Optional[GanttTask]:
     """
     1行のタスク行を解析して GanttTask を返す。
@@ -419,6 +421,9 @@ def _parse_task_line(
         dateFormat ディレクティブの値（現在はYYYY-MM-DDのみサポート）。
     task_counter : list[int]
         自動ID生成用カウンター（長さ1のリスト）。
+    inclusive_end_dates : bool
+        True の場合、終了日付を包含として解釈（終了日+1日を内部的に使用）。
+        mermaid.js の inclusiveEndDates ディレクティブ対応。
 
     Returns
     -------
@@ -446,6 +451,9 @@ def _parse_task_line(
     start_str: Optional[str] = None
     end_str: Optional[str] = None
 
+    # date_format に対応した正規表現を一度だけ取得する（キャッシュ済み）
+    _date_re, _ = _get_date_helpers(date_format)
+
     i = 0
     while i < len(parts):
         part = parts[i]
@@ -471,7 +479,6 @@ def _parse_task_line(
             continue
 
         # 日付文字列の検出 → start に設定し、次パーツを end として取得する
-        _date_re, _ = _get_date_helpers(date_format)
         if _date_re.match(part):
             start_str = part
             if i + 1 < len(parts):
@@ -515,6 +522,13 @@ def _parse_task_line(
             end_date = _resolve_end(end_str, task_end_map, start_date, date_format)
         except ValueError:
             end_date = start_date + timedelta(days=1)
+
+    # inclusiveEndDates: 終了日付の日付文字列指定時は「その日を含む」= +1日する
+    # 期間（duration）や after/until 参照の場合は適用しない
+    if inclusive_end_dates and end_str is not None:
+        # _get_date_helpers() は lru_cache でキャッシュ済みのため重複コンパイルなし
+        if _date_re.match(end_str.strip()):
+            end_date = end_date + timedelta(days=1)
 
     # end が start 以前の場合は 1日後に設定する
     if end_date <= start_date:
@@ -563,6 +577,7 @@ def parse_gantt(text: str) -> GanttChart:
     current_section: Optional[GanttSection] = None
     task_end_map: dict[str, date] = {}   # タスクIDから終了日のマッピング
     task_counter = [0]                   # 自動ID生成用カウンター（リストで可変参照）
+    inclusive_end_dates = False          # inclusiveEndDates ディレクティブが宣言された場合 True
 
     for raw_line in lines:
         line = raw_line.strip()
@@ -585,6 +600,10 @@ def parse_gantt(text: str) -> GanttChart:
         if lower_line.startswith("excludes "):
             excludes_str = line[9:].strip()
             excludes = [e.strip() for e in excludes_str.split(",") if e.strip()]
+            continue
+        if lower_line == "inclusiveenddates":
+            # inclusiveEndDates: 終了日を包含として解釈するディレクティブ
+            inclusive_end_dates = True
             continue
 
         # 表示用ディレクティブは描画に影響しないため無視する
@@ -615,6 +634,7 @@ def parse_gantt(text: str) -> GanttChart:
                 task_end_map,
                 date_format,
                 task_counter,
+                inclusive_end_dates,
             )
             if task is not None:
                 current_section.tasks.append(task)
@@ -624,4 +644,5 @@ def parse_gantt(text: str) -> GanttChart:
         date_format=date_format,
         excludes=excludes,
         sections=sections,
+        inclusive_end_dates=inclusive_end_dates,
     )
