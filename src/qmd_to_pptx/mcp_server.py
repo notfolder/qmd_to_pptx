@@ -63,7 +63,20 @@ def _resolve_template(template_id: str | None) -> Iterator[str | None]:
         URL からのダウンロードに失敗した場合。
     """
     if template_id is None:
-        yield None
+        # template_id 未指定時、有効なテンプレートが登録されていれば先頭を自動選択する
+        registry = TemplateRegistry()
+        default = registry.default_path()
+        if default is not None:
+            default_id, default_doc = default
+            logging.info(
+                "template_id 未指定のため、登録済みテンプレートを自動選択しました: "
+                "id=%s, path=%s",
+                default_id,
+                default_doc,
+            )
+            yield default_doc
+        else:
+            yield None
         return
 
     # URL として認識する（http:// または https:// で始まる場合）

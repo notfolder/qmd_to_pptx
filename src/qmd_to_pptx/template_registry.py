@@ -88,6 +88,23 @@ class TemplateRegistry:
             for tid, entry in self._templates.items()
         }
 
+    def default_path(self) -> tuple[str, str] | None:
+        """
+        登録済みテンプレートが存在する場合、先頭エントリーの (ID, パス) を返す。
+
+        template_id が未指定のとき、自動的に使用するデフォルトテンプレートを
+        選択するために使用する。登録がない場合は None を返す。
+
+        Returns
+        -------
+        tuple[str, str] | None
+            (テンプレートID, PPTXファイルパス) のタプル。
+            登録がない場合は None。
+        """
+        for tid, entry in self._templates.items():
+            return (tid, entry["path"])
+        return None
+
     # ------------------------------------------------------------------
     # 内部メソッド
     # ------------------------------------------------------------------
