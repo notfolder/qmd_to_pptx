@@ -30,6 +30,7 @@ dependencies = [
     "mathml2omml",
     "mcp[cli]",
     "pyyaml",
+    "nest-asyncio",
 ]
 
 [project.scripts]
