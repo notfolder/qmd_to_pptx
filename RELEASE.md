@@ -5,6 +5,7 @@
 - [PyPI](https://pypi.org/) アカウントを持っていること
 - PyPI の API トークンを取得済みであること（Account settings → API tokens）
 - `uv` がインストールされていること（`uv --version` で確認）
+- `twine` が dev 依存としてインストールされていること（`uv sync` で導入される）
 
 ## リリースフロー
 
@@ -48,37 +49,33 @@ uv build
 本番リリース前に [TestPyPI](https://test.pypi.org/) でパッケージの見た目・インストールを確認する。
 
 ```bash
-uv publish --index testpypi
+uv run twine upload --repository testpypi dist/*
 ```
 
 確認後、TestPyPI からインストールして動作を検証する。
 
 ```bash
-pip install --index-url https://test.pypi.org/simple/ qmd-to-pptx
+uv pip install --index-url https://test.pypi.org/simple/ qmd-to-pptx
 ```
 
 ### 5. 本番 PyPI へリリースする
 
 ```bash
-uv publish
-```
-
-トークンを環境変数で渡す場合は以下のとおり。
-
-```bash
-UV_PUBLISH_TOKEN=<PyPI_API_TOKEN> uv publish
+uv run twine upload dist/*
 ```
 
 ### 6. リリースを確認する
 
 - PyPI のパッケージページ（`https://pypi.org/project/qmd-to-pptx/`）でバージョンが反映されていることを確認する
-- `pip install qmd-to-pptx==<バージョン>` でインストールできることを確認する
+- `uv pip install qmd-to-pptx==<バージョン>` でインストールできることを確認する
 
 ## API トークンの管理
 
+`twine` は `~/.pypirc` を自動的に参照するため、トークンを都度入力する必要がない。
+
 ### ローカル開発：~/.pypirc に保存する
 
-`~/.pypirc` にトークンを記述しておくと、`uv publish` 実行時に `--token` オプションを省略できる。
+**1. `~/.pypirc` を作成する**
 
 ```ini
 [distutils]
@@ -96,25 +93,20 @@ username = __token__
 password = pypi-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-ファイルを作成したら、他ユーザーから読めないようにパーミッションを制限する。
+**2. パーミッションを制限する**
 
 ```bash
 chmod 600 ~/.pypirc
 ```
 
-この設定後は、`--token` オプションなしでそのままリリースできる。  
-`--index` にセクション名を指定することで `~/.pypirc` の認証情報が読み込まれる。
-
-```bash
-uv publish                       # 本番PyPI（[pypi] セクションを使用）
-uv publish --index testpypi      # TestPyPI（[testpypi] セクションを使用）
-```
-
-> **注意**: `--publish-url` でURLを直接指定すると `~/.pypirc` のセクションが特定できず、  
-> トークンの入力を求められる。TestPyPI には必ず `--index testpypi` を使うこと。
+これ以降、`uv run twine upload dist/*` を実行するだけでトークン入力なしにリリースできる。
 
 ### CI/CD
 
-リポジトリのシークレット変数に登録し、環境変数 `UV_PUBLISH_TOKEN` として参照する。
+リポジトリのシークレット変数に `TWINE_USERNAME`（値: `__token__`）と `TWINE_PASSWORD`（値: トークン）を登録し、以下のように参照する。
+
+```bash
+TWINE_USERNAME=__token__ TWINE_PASSWORD=<PyPI_API_TOKEN> uv run twine upload dist/*
+```
 
 API トークンはソースコードやコミットログに含めないこと。

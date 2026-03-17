@@ -46,4 +46,5 @@ packages = ["src/qmd_to_pptx"]
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
+    "twine>=6.2.0",
 ]
