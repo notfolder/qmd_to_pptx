@@ -1,6 +1,6 @@
 [project]
 name = "qmd-to-pptx"
-version = "0.1.2"
+version = "0.1.3"
 description = "Convert QMD/Markdown files to editable PowerPoint presentations"
 readme = "README.md"
 license = { text = "MIT" }
