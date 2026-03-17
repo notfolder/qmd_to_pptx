@@ -10,7 +10,13 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
+import tempfile
+import urllib.request
+import urllib.error
+from contextlib import contextmanager
+from typing import Iterator
 
 from mcp.server.fastmcp import FastMCP
 
@@ -19,6 +25,60 @@ from .template_registry import TemplateRegistry
 
 # FastMCPサーバーインスタンスを生成する
 mcp = FastMCP("qmd_to_pptx")
+
+
+@contextmanager
+def _resolve_template(template_id: str | None) -> Iterator[str | None]:
+    """
+    template_id をテンプレートファイルパスに解決するコンテキストマネージャー。
+
+    template_id が URL（http:// または https:// で始まる）の場合は
+    一時ファイルにダウンロードし、コンテキスト終了後に削除する。
+    template_id が登録済みIDの場合はレジストリから解決する。
+    template_id が None の場合は None を返す。
+
+    Parameters
+    ----------
+    template_id : str | None
+        テンプレートID、URL、または None。
+
+    Yields
+    ------
+    str | None
+        テンプレートPPTXファイルの絶対パス、または None。
+
+    Raises
+    ------
+    ValueError
+        template_id が未登録のIDの場合。
+    urllib.error.URLError
+        URL からのダウンロードに失敗した場合。
+    """
+    if template_id is None:
+        yield None
+        return
+
+    # URL として認識する（http:// または https:// で始まる場合）
+    if template_id.startswith("http://") or template_id.startswith("https://"):
+        # 一時ファイルを .pptx 拡張子で作成する
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".pptx")
+        os.close(tmp_fd)
+        try:
+            logging.info("テンプレートをダウンロード中: %s", template_id)
+            urllib.request.urlretrieve(template_id, tmp_path)  # noqa: S310
+            logging.info("ダウンロード完了: %s -> %s", template_id, tmp_path)
+            yield tmp_path
+        finally:
+            # render 完了後（または例外発生時）に一時ファイルを削除する
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+                logging.info("一時テンプレートファイルを削除しました: %s", tmp_path)
+        return
+
+    # 登録済みテンプレートID として解決する
+    registry = TemplateRegistry()
+    reference_doc = registry.resolve(template_id)
+    yield reference_doc
 
 
 @mcp.tool()
@@ -37,27 +97,26 @@ def markdown_to_pptx(
     output : str
         出力先PPTXファイルパス（サーバー側ファイルシステム上のパス）。
     template_id : str | None
-        config/templates.yaml に登録済みのテンプレートID。
-        省略時はデフォルトレイアウトを使用する。
+        テンプレートの指定。以下の形式を受け付ける。
+        - config/templates.yaml に登録済みのテンプレートID
+        - http:// または https:// で始まるPPTXテンプレートのURL
+          （URLの場合は一時ファイルにダウンロードし、処理後に削除する）
+        - 省略時はデフォルトレイアウトを使用する
 
     Returns
     -------
     str
         処理結果を示す文字列メッセージ。
     """
-    # template_id が指定された場合はレジストリからPPTXパスを解決する
-    reference_doc: str | None = None
-    if template_id is not None:
-        registry = TemplateRegistry()
-        try:
-            reference_doc = registry.resolve(template_id)
-        except ValueError as e:
-            # 未登録のIDを指定した場合はエラーメッセージを返して変換しない
-            return f"エラー: {e}"
-
     try:
-        render(content, output, reference_doc)
+        with _resolve_template(template_id) as reference_doc:
+            render(content, output, reference_doc)
         return f"PPTXファイルを生成しました: {output}"
+    except ValueError as e:
+        # 未登録のIDを指定した場合はエラーメッセージを返して変換しない
+        return f"エラー: {e}"
+    except urllib.error.URLError as e:
+        return f"テンプレートのダウンロードに失敗しました: {e}"
     except Exception as e:
         logging.error("PPTX生成中にエラーが発生しました: %s", e, exc_info=True)
         return f"エラーが発生しました: {e}"
