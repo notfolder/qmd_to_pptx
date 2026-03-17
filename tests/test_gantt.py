@@ -127,6 +127,16 @@ class TestResolveStart:
         with pytest.raises(ValueError):
             _resolve_start("after unknown_task", {})
 
+    def test_date_string_yyyy_mm(self):
+        """YYYY-MM 形式の日付文字列を正しく解決する（月初を補完）。"""
+        result = _resolve_start("2024-03", {}, date_format="YYYY-MM")
+        assert result == date(2024, 3, 1)
+
+    def test_date_string_yyyy_mm_does_not_match_yyyymmdd_format(self):
+        """YYYY-MM-DD 形式指定時に YYYY-MM 文字列は ValueError になる。"""
+        with pytest.raises(ValueError):
+            _resolve_start("2024-03", {}, date_format="YYYY-MM-DD")
+
 
 # ===========================================================================
 # TestResolveEnd: end日付解決テスト
@@ -150,6 +160,11 @@ class TestResolveEnd:
         task_end_map = {"t1": date(2024, 2, 10)}
         result = _resolve_end("until t1", task_end_map, date(2024, 1, 1))
         assert result == date(2024, 2, 10)
+
+    def test_date_string_yyyy_mm(self):
+        """YYYY-MM 形式の日付文字列を正しく解決する（月初を補完）。"""
+        result = _resolve_end("2024-06", {}, date(2024, 3, 1), date_format="YYYY-MM")
+        assert result == date(2024, 6, 1)
 
 
 # ===========================================================================
@@ -321,8 +336,74 @@ gantt
 
 
 # ===========================================================================
-# TestGanttRenderer: GanttRenderer のスライド出力テスト
+# TestParseGanttYyyyMm: YYYY-MM dateFormat の統合テスト
 # ===========================================================================
+
+class TestParseGanttYyyyMm:
+    """ガントチャートの dateFormat YYYY-MM を対象とした parse_gantt() のテスト群。"""
+
+    def test_yyyy_mm_date_string(self):
+        """YYYY-MM 形式の日付が正しくパースされる（月初を補完）。"""
+        text = """\
+gantt
+    title ロードマップ
+    dateFormat YYYY-MM
+    section Q1
+        設計  :des, 2024-01, 2024-03
+        実装  :impl, 2024-03, 2024-06
+"""
+        chart = parse_gantt(text)
+        assert chart.date_format == "YYYY-MM"
+        tasks = chart.sections[0].tasks
+        assert len(tasks) == 2
+
+        # 設計: 2024-01-01 〜 2024-03-01
+        assert tasks[0].start_date == date(2024, 1, 1)
+        assert tasks[0].end_date == date(2024, 3, 1)
+
+        # 実装: 2024-03-01 〜 2024-06-01
+        assert tasks[1].start_date == date(2024, 3, 1)
+        assert tasks[1].end_date == date(2024, 6, 1)
+
+    def test_yyyy_mm_with_duration(self):
+        """YYYY-MM 開始日と期間指定の組み合わせが正しく動作する。"""
+        text = """\
+gantt
+    dateFormat YYYY-MM
+    section S
+        タスクA :a1, 2024-02, 4w
+"""
+        chart = parse_gantt(text)
+        t = chart.sections[0].tasks[0]
+        assert t.start_date == date(2024, 2, 1)
+        assert t.end_date == date(2024, 2, 1) + 4 * __import__('datetime').timedelta(weeks=1)
+
+    def test_yyyy_mm_with_after_reference(self):
+        """YYYY-MM 形式で after 参照が正しく解決される。"""
+        text = """\
+gantt
+    dateFormat YYYY-MM
+    section S
+        タスクA :a1, 2024-01, 2024-03
+        タスクB :b1, after a1, 2024-06
+"""
+        chart = parse_gantt(text)
+        tasks = chart.sections[0].tasks
+        # タスクB は タスクA の終了日 (2024-03-01) から開始する
+        assert tasks[1].start_date == date(2024, 3, 1)
+        assert tasks[1].end_date == date(2024, 6, 1)
+
+    def test_yyyy_mm_yyyymmdd_string_not_matched(self):
+        """dateFormat YYYY-MM 指定時に YYYY-MM-DD 文字列はタスクとして認識されない。"""
+        text = """\
+gantt
+    dateFormat YYYY-MM
+    section S
+        タスクA :a1, 2024-01-15, 2024-03-31
+"""
+        chart = parse_gantt(text)
+        # 日付が認識できないためタスクは 0 件
+        assert len(chart.sections[0].tasks) == 0
 
 class TestGanttRenderer:
     """GanttRenderer.render() のスライド出力テスト。"""

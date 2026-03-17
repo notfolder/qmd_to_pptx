@@ -64,8 +64,38 @@ class GanttChart:
 # タグ文字列セット（小文字で比較する）
 _VALID_TAGS: frozenset[str] = frozenset({"done", "active", "crit", "milestone"})
 
-# YYYY-MM-DD 形式の日付パターン
-_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+# Mermaid dateFormat 文字列 → (正規表現パターン文字列, strptime フォーマット文字列) のマッピング
+# 日が省略されたフォーマット（YYYY-MM / YYYY 等）は月初/年初 (day=1) を補完する
+_DATEFORMAT_MAP: dict[str, tuple[str, str]] = {
+    "YYYY-MM-DD":  (r"^\d{4}-\d{2}-\d{2}$", "%Y-%m-%d"),
+    "YYYY-MM":     (r"^\d{4}-\d{2}$",        "%Y-%m"),
+    "YYYY":        (r"^\d{4}$",               "%Y"),
+    "MM/DD/YYYY":  (r"^\d{2}/\d{2}/\d{4}$",  "%m/%d/%Y"),
+    "DD/MM/YYYY":  (r"^\d{2}/\d{2}/\d{4}$",  "%d/%m/%Y"),
+    "M/D/YYYY":    (r"^\d{1,2}/\d{1,2}/\d{4}$", "%m/%d/%Y"),
+}
+
+
+def _get_date_helpers(date_format: str) -> tuple[re.Pattern, str]:
+    """
+    dateFormat 文字列から (日付判定正規表現, strptime フォーマット) を返す。
+
+    Parameters
+    ----------
+    date_format : str
+        Mermaid の dateFormat ディレクティブ値（例: "YYYY-MM-DD", "YYYY-MM"）。
+
+    Returns
+    -------
+    tuple[re.Pattern, str]
+        (コンパイル済み正規表現, strptime フォーマット文字列) のタプル。
+        未知のフォーマットは YYYY-MM-DD にフォールバックする。
+    """
+    pat_str, strptime_fmt = _DATEFORMAT_MAP.get(
+        date_format, _DATEFORMAT_MAP["YYYY-MM-DD"]
+    )
+    return re.compile(pat_str), strptime_fmt
+
 
 # 期間パターン: Nd / Nw / Nh（例: 7d, 2w, 24h）
 _DURATION_RE = re.compile(r"^(\d+)(d|w|h)$", re.IGNORECASE)
@@ -109,14 +139,18 @@ def _parse_duration(s: str) -> timedelta:
     return timedelta(days=max(1, (n + 23) // 24))
 
 
-def _parse_date_str(s: str) -> date:
+def _parse_date_str(s: str, strptime_fmt: str = "%Y-%m-%d") -> date:
     """
-    YYYY-MM-DD 形式の日付文字列を date オブジェクトに変換する。
+    strptime_fmt に従って日付文字列を date オブジェクトに変換する。
+
+    YYYY-MM など日が省略されたフォーマットは月初 (day=1) を補完する。
 
     Parameters
     ----------
     s : str
         日付文字列。
+    strptime_fmt : str
+        Python の strptime フォーマット文字列（例: "%Y-%m-%d", "%Y-%m"）。
 
     Returns
     -------
@@ -128,12 +162,13 @@ def _parse_date_str(s: str) -> date:
     ValueError
         日付文字列の形式が不正な場合。
     """
-    return datetime.strptime(s.strip(), "%Y-%m-%d").date()
+    return datetime.strptime(s.strip(), strptime_fmt).date()
 
 
 def _resolve_start(
     value: str,
     task_end_map: dict[str, date],
+    date_format: str = "YYYY-MM-DD",
 ) -> date:
     """
     start の値文字列を date に解決する。
@@ -146,6 +181,8 @@ def _resolve_start(
         解析対象の値文字列。
     task_end_map : dict[str, date]
         タスクIDから終了日への既存マッピング（参照解決用）。
+    date_format : str
+        Mermaid の dateFormat ディレクティブ値（例: "YYYY-MM-DD", "YYYY-MM"）。
 
     Returns
     -------
@@ -158,10 +195,11 @@ def _resolve_start(
         解決できない場合。
     """
     v = value.strip()
+    date_re, strptime_fmt = _get_date_helpers(date_format)
 
     # 日付文字列
-    if _DATE_RE.match(v):
-        return _parse_date_str(v)
+    if date_re.match(v):
+        return _parse_date_str(v, strptime_fmt)
 
     # after taskId [taskId...] 参照: 最も遅い終了日を開始日として使用する
     m = _AFTER_RE.match(v)
@@ -182,6 +220,7 @@ def _resolve_end(
     value: str,
     task_end_map: dict[str, date],
     start_date: date,
+    date_format: str = "YYYY-MM-DD",
 ) -> date:
     """
     end の値文字列を date に解決する。
@@ -196,6 +235,8 @@ def _resolve_end(
         タスクIDから終了日への既存マッピング（参照解決用）。
     start_date : date
         期間文字列解決時の基準日。
+    date_format : str
+        Mermaid の dateFormat ディレクティブ値（例: "YYYY-MM-DD", "YYYY-MM"）。
 
     Returns
     -------
@@ -208,10 +249,11 @@ def _resolve_end(
         解決できない場合。
     """
     v = value.strip()
+    date_re, strptime_fmt = _get_date_helpers(date_format)
 
     # 日付文字列
-    if _DATE_RE.match(v):
-        return _parse_date_str(v)
+    if date_re.match(v):
+        return _parse_date_str(v, strptime_fmt)
 
     # until taskId 参照
     m_until = _UNTIL_RE.match(v)
@@ -316,7 +358,8 @@ def _parse_task_line(
             continue
 
         # 日付文字列の検出 → start に設定し、次パーツを end として取得する
-        if _DATE_RE.match(part):
+        _date_re, _ = _get_date_helpers(date_format)
+        if _date_re.match(part):
             start_str = part
             if i + 1 < len(parts):
                 end_str = parts[i + 1]
@@ -347,7 +390,7 @@ def _parse_task_line(
 
     # start_date を解決する
     try:
-        start_date = _resolve_start(start_str, task_end_map)
+        start_date = _resolve_start(start_str, task_end_map, date_format)
     except ValueError:
         return None
 
@@ -356,7 +399,7 @@ def _parse_task_line(
         end_date = start_date + timedelta(days=1)
     else:
         try:
-            end_date = _resolve_end(end_str, task_end_map, start_date)
+            end_date = _resolve_end(end_str, task_end_map, start_date, date_format)
         except ValueError:
             end_date = start_date + timedelta(days=1)
 
