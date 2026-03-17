@@ -7,11 +7,15 @@ QMDファイル先頭のYAMLフロントマターブロックを抽出し、
 
 from __future__ import annotations
 
+import logging
 import re
 
 import yaml
 
 from .models import SlideMetadata
+
+# モジュールロガーを取得する
+logger = logging.getLogger(__name__)
 
 
 class YAMLParser:
@@ -83,8 +87,16 @@ class YAMLParser:
         try:
             slide_level = int(slide_level_raw)
         except (TypeError, ValueError):
+            logger.warning(
+                "slide-level の値 %r を整数に変換できませんでした。2 にフォールバックします。",
+                slide_level_raw,
+            )
             slide_level = 2
         if slide_level not in (1, 2):
+            logger.warning(
+                "slide-level の値 %r は有効範囲外（1 または 2）です。2 にフォールバックします。",
+                slide_level,
+            )
             slide_level = 2
 
         return SlideMetadata(

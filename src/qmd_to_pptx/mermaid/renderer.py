@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import io
 import contextlib
+import logging
 import re
 import xml.etree.ElementTree as ET
 
@@ -17,6 +18,9 @@ with contextlib.redirect_stdout(io.StringIO()):
     from mermaid_parser import MermaidParser
 
 from pptx.slide import Slide
+
+# モジュールロガーを取得する
+logger = logging.getLogger(__name__)
 
 from .base import BaseDiagramRenderer
 from .class_diagram import ClassDiagramRenderer

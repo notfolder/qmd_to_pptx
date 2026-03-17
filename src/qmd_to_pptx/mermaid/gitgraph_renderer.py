@@ -43,6 +43,8 @@ GitGraph データクラスを入力として PowerPoint スライドに Git グ
 
 from __future__ import annotations
 
+import logging
+
 from lxml import etree as lxml_etree
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_CONNECTOR
@@ -51,6 +53,9 @@ from pptx.slide import Slide
 from pptx.util import Emu, Pt
 
 from .gitgraph_parser import GitBranch, GitCommit, GitGraph
+
+# モジュールロガーを取得する
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # ブランチカラーパレット（RGB タプル）
@@ -383,6 +388,10 @@ class GitGraphRenderer:
             )
         else:
             # 不明な方向は LR にフォールバックする
+            logger.warning(
+                "gitグラフで不明な方向 %r が指定されました。LR にフォールバックします。",
+                direction,
+            )
             self._render_lr(
                 slide, graph, left, top, width, height,
                 branch_lane, branch_color_map, commit_col, n_lanes, n_cols,

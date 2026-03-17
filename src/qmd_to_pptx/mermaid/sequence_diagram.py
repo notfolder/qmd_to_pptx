@@ -16,6 +16,7 @@ OOXML制限による代替仕様:
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Optional
@@ -27,6 +28,9 @@ from pptx.slide import Slide
 from pptx.util import Emu, Pt
 
 from .base import BaseDiagramRenderer
+
+# モジュールロガーを取得する
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # レイアウト定数（EMU単位）
