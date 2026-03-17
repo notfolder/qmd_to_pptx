@@ -15,6 +15,7 @@ It can be used directly as a Python library, or launched as an MCP server to be 
 - [Usage as a Library](#usage-as-a-library)
 - [Usage as an MCP Server](#usage-as-an-mcp-server)
 - [Template Feature](#template-feature)
+  - [Verifying Template Compatibility](#verifying-template-compatibility)
 - [QMD Syntax Reference](#qmd-syntax-reference)
 
 ---
@@ -250,6 +251,54 @@ Setting the `QMD_TO_PPTX_TEMPLATES` environment variable to the absolute path of
 ### Checking Registered Templates
 
 Call the MCP tool `list_templates` to retrieve the list of templates currently registered in the configuration file.
+
+### Verifying Template Compatibility
+
+Use `check_template.py` to verify that a PPTX template has the required slide layouts for `qmd_to_pptx`.
+
+```
+python check_template.py <template.pptx>
+```
+
+Example:
+
+```
+python check_template.py my_template.pptx
+```
+
+The script checks the following layouts. If a layout is missing or has incorrect placeholders, it provides instructions on how to fix it in PowerPoint.
+
+| Layout Name | Usage | Required Placeholder idx |
+|-------------|-------|-------------------------|
+| `Title Slide` | Cover slide | 0 (title), 1 (subtitle) |
+| `Title and Content` | Body slides (most common) | 0 (title), 1 (content) |
+| `Section Header` | Section separator (`#` heading) | 0 (title) |
+| `Two Content` | Two-column layout | 0 (title), 1 (left), 2 (right) |
+| `Comparison` | Two-column with figures/tables | 0 (title), 1 (left), 2 (right) |
+| `Content with Caption` | Text + figure/table mixed slide | 0 (title), 1 (content/figure), 2 (caption/text) |
+| `Blank` | Blank slide (`---` separator) | — |
+
+If `Two Content`, `Comparison`, or `Content with Caption` are not found in the template, they fall back to `Title and Content` automatically. When a layout is present but missing required placeholders, or when the fallback chain is broken, the script reports it as `NG` and shows the exact fix needed.
+
+```
+============================================================
+Template check: my_template.pptx
+============================================================
+
+[OK] The following layouts are configured correctly:
+  ✓ "Title Slide"  — Cover slide
+  ...
+
+[Action Required]
+  [NG]   "Content with Caption" does not exist (no fallback available).
+         → Add this layout in PowerPoint Slide Master view,
+           set its name to "Content with Caption",
+           and add placeholders: idx=0 (title), idx=1 (content/figure), idx=2 (caption/text).
+
+============================================================
+Overall: NG — Fixing the template is strongly recommended.
+============================================================
+```
 
 ---
 
