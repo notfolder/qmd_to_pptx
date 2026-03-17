@@ -6,6 +6,7 @@ Mermaid図レンダラーの基底クラスモジュール。
 
 from __future__ import annotations
 
+import logging
 import math
 
 from lxml import etree as lxml_etree
@@ -13,6 +14,8 @@ from pptx.oxml.ns import qn
 from pptx.slide import Slide
 from pptx.util import Emu, Pt
 
+# モジュールロガーを取得する
+logger = logging.getLogger(__name__)
 
 # ノードのデフォルトサイズ（EMU）
 NODE_WIDTH_EMU: int = 1200000
@@ -277,6 +280,12 @@ class BaseDiagramRenderer:
         height : int
             高さ（EMU）。
         """
+        # 先頭行からダイアグラム種別を取得してログに記録する
+        first_line = mermaid_text.splitlines()[0].strip() if mermaid_text else ""
+        logger.warning(
+            "Mermaidダイアグラムの描画にフォールバックしました（テキストボックス表示）: %s",
+            first_line,
+        )
         shape = slide.shapes.add_textbox(
             Emu(left), Emu(top), Emu(width), Emu(height)
         )

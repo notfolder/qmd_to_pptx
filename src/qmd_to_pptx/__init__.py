@@ -2,14 +2,31 @@
 qmd_to_pptx パッケージのエントリーポイント。
 
 外部に公開する render() 関数を定義する。
+
+ロギング設定:
+- 非MCPモード（直接呼び出し）: 標準出力（stdout）にログを出力する
+- MCPモード: mcp_server.py の main() がロガーを標準エラー（stderr）に切り替える
 """
 
 from __future__ import annotations
 
+import logging
+import sys
 from pathlib import Path
 
 from .preprocessor import Preprocessor
 from .slide_renderer import SlideRenderer
+
+# パッケージロガーを取得し、デフォルトで標準出力（stdout）ハンドラーを設定する
+# MCPモードでは mcp_server.py の main() がハンドラーをstderrに切り替える
+_pkg_logger = logging.getLogger("qmd_to_pptx")
+if not _pkg_logger.handlers:
+    _stdout_handler = logging.StreamHandler(sys.stdout)
+    _stdout_handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+    _pkg_logger.addHandler(_stdout_handler)
+    _pkg_logger.setLevel(logging.WARNING)
+    # 親（ルート）ロガーへの伝播を無効にして二重出力を防止する
+    _pkg_logger.propagate = False
 
 
 def render(

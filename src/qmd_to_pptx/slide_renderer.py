@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib.resources
 import json
+import logging
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -35,6 +36,9 @@ from .models import (
 from .slide_splitter import SlideSplitter
 from .text_renderer import TextRenderer
 from .yaml_parser import YAMLParser
+
+# モジュールロガーを取得する
+logger = logging.getLogger(__name__)
 
 
 class _NodeAdapter:
@@ -213,6 +217,9 @@ class SlideRenderer:
             json_text = ref.read_text(encoding="utf-8")
         except Exception:
             # フォールバック: ファイルシステムから直接読み込む
+            logger.warning(
+                "importlib.resources でのリソース読み込みに失敗しました。ファイルシステムから直接読み込みます。"
+            )
             json_path = Path(__file__).parent / "resources" / "default_layout.json"
             json_text = json_path.read_text(encoding="utf-8")
 
@@ -792,6 +799,9 @@ class SlideRenderer:
                     self._text_renderer.render_heading(ph, title_elem, level=2)
         else:
             # フォールバック: textboxを使用する
+            logger.warning(
+                "スライドのタイトルプレースホルダー（idx=0）が見つかりませんでした。テキストボックスを使用します。"
+            )
             ph_info = next(
                 (p for p in layout_def.placeholders if p.role == "title"), None
             )

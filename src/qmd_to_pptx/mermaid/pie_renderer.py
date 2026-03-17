@@ -23,6 +23,8 @@ textPosition → dLblPos マッピング:
 
 from __future__ import annotations
 
+import logging
+
 from lxml import etree as lxml_etree
 from pptx.chart.data import ChartData
 from pptx.dml.color import RGBColor
@@ -32,6 +34,9 @@ from pptx.slide import Slide
 from pptx.util import Emu, Pt
 
 from .pie_parser import PieChart
+
+# モジュールロガーを取得する
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # データラベル位置マッピング定数
@@ -203,4 +208,7 @@ class PieChartRenderer:
             dLbls.insert(idx, dLblPos_el)
         else:
             # showLegendKey が見つからない場合は先頭に追加する（フォールバック）
+            logger.warning(
+                "円グラフのOOXML要素 showLegendKey が見つかりませんでした。dLblPos を先頭に挿入します。"
+            )
             dLbls.insert(0, dLblPos_el)

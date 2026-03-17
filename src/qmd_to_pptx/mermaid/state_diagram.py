@@ -29,6 +29,7 @@ OOXML制限と代替案:
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 from typing import Optional
@@ -42,6 +43,9 @@ from pptx.slide import Slide
 from pptx.util import Emu, Pt
 
 from .base import BaseDiagramRenderer, NODE_WIDTH_EMU, NODE_HEIGHT_EMU
+
+# モジュールロガーを取得する
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # 形状サイズ定数（EMU）
@@ -371,9 +375,15 @@ class StateDiagramRenderer(BaseDiagramRenderer):
             pass
 
         # 最終フォールバック（方向考慮なし）
+        logger.warning(
+            "ステートダイアグラムのレイアウト計算に失敗しました。kamada_kawai_layout → spring_layout にフォールバックします。"
+        )
         try:
             return nx.kamada_kawai_layout(G)
         except Exception:
+            logger.warning(
+                "kamada_kawai_layout に失敗しました。spring_layout にフォールバックします。"
+            )
             return nx.spring_layout(G, seed=42, k=1.5)
 
     def _topological_layout(
@@ -432,6 +442,10 @@ class StateDiagramRenderer(BaseDiagramRenderer):
                     pos[nid] = (-level_pos, span_pos)
                 else:
                     # 不明な方向は TB にフォールバックする
+                    logger.warning(
+                        "ステートダイアグラムで不明な方向 %r が指定されました。TB にフォールバックします。",
+                        direction,
+                    )
                     pos[nid] = (span_pos, level_pos)
 
         return pos
@@ -815,6 +829,10 @@ class StateDiagramRenderer(BaseDiagramRenderer):
                 tcx, tcy = node_center_emu[note_id]
             else:
                 # フォールバック: 描画エリア右端中央に配置する
+                logger.warning(
+                    "ステートダイアグラムのノート %r のターゲット状態が見つかりませんでした。描画エリア右端中央に配置します。",
+                    note_id,
+                )
                 tcx = left + width - _STATE_W
                 tcy = top + height // 2
 
