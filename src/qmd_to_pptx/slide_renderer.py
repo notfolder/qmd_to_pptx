@@ -326,7 +326,9 @@ class SlideRenderer:
 
     def _is_content_with_caption(self, nodes: list[DOMNodeInfo]) -> bool:
         """
-        1カラム構成でテキストの後に非テキスト要素が続くかを確認する。
+        1カラム構成でテキスト系ノードと図系ノードの両方が存在するかを確認する。
+
+        順序に依存せず、両種別のノードが混在していれば True を返す。
 
         Parameters
         ----------
@@ -338,23 +340,26 @@ class SlideRenderer:
         bool
             Content with Captionレイアウトを適用する場合はTrue。
         """
-        text_found = False
-        for node in nodes:
-            if node.node_type in (
+        # テキスト系ノードが存在するか確認する
+        has_text = any(
+            n.node_type in (
                 DOMNodeType.PARAGRAPH,
                 DOMNodeType.UL,
                 DOMNodeType.OL,
                 DOMNodeType.CODE,
-            ):
-                text_found = True
-            elif node.node_type in (
+            )
+            for n in nodes
+        )
+        # 図系ノードが存在するか確認する
+        has_diagram = any(
+            n.node_type in (
                 DOMNodeType.TABLE,
                 DOMNodeType.MERMAID,
                 DOMNodeType.FORMULA_BLOCK,
-            ):
-                if text_found:
-                    return True
-        return False
+            )
+            for n in nodes
+        )
+        return has_text and has_diagram
 
     def _resolve_placeholder(self, slide: Slide, idx: int) -> bool:
         """
@@ -691,8 +696,13 @@ class SlideRenderer:
         # レイアウト名でスライドレイアウトを検索する
         layout = self._find_layout(prs, layout_name)
         if layout is None:
-            # レイアウトが見つからない場合は最初のレイアウトを使用する
-            layout = prs.slide_layouts[0]
+            # コンテンツ系レイアウトが見つからない場合は Title and Content を試みる
+            _CONTENT_FALLBACK_LAYOUTS = {"Two Content", "Comparison", "Content with Caption"}
+            if layout_name in _CONTENT_FALLBACK_LAYOUTS:
+                layout = self._find_layout(prs, "Title and Content")
+            # それでも見つからない場合は最初のレイアウトを使用する
+            if layout is None:
+                layout = prs.slide_layouts[0]
 
         slide = prs.slides.add_slide(layout)
         self._fix_slide_xml(slide)
@@ -818,6 +828,23 @@ class SlideRenderer:
         """
         layout_def = self._layout_json.layouts.get(layout_name, LayoutDef())
 
+        # "Title and Content" かつテキスト系・図系の混在コンテンツの場合は縦分割で描画する
+        if layout_name == "Title and Content":
+            body_nodes = self._collect_body_nodes(nodes, metadata)
+            _DIAGRAM_TYPES = (DOMNodeType.MERMAID, DOMNodeType.TABLE, DOMNodeType.FORMULA_BLOCK)
+            _TEXT_TYPES = (DOMNodeType.PARAGRAPH, DOMNodeType.UL, DOMNodeType.OL, DOMNodeType.CODE)
+            has_text_body = any(n.node_type in _TEXT_TYPES for n in body_nodes)
+            has_diagram_body = any(n.node_type in _DIAGRAM_TYPES for n in body_nodes)
+            if has_text_body and has_diagram_body:
+                # スピーカーノートだけ先に処理してから縦分割描画する
+                for node in nodes:
+                    if node.node_type == DOMNodeType.NOTES:
+                        self._text_renderer.render_notes(slide, node.element)
+                self._render_body_nodes_vertical_split(
+                    slide, body_nodes, layout_def, reference_doc, metadata.incremental
+                )
+                return
+
         for node in nodes:
             ntype = node.node_type
             elem = node.element
@@ -840,7 +867,8 @@ class SlideRenderer:
                     if child.tag in ("ul", "ol"):
                         self._render_body_node(
                             slide, DOMNodeInfo(DOMNodeType.UL, child),
-                            layout_def, reference_doc, incremental=True
+                            layout_def, reference_doc, incremental=True,
+                            layout_name=layout_name,
                         )
                 continue
 
@@ -850,7 +878,8 @@ class SlideRenderer:
                     if child.tag in ("ul", "ol"):
                         self._render_body_node(
                             slide, DOMNodeInfo(DOMNodeType.UL, child),
-                            layout_def, reference_doc, incremental=False
+                            layout_def, reference_doc, incremental=False,
+                            layout_name=layout_name,
                         )
                 continue
 
@@ -865,7 +894,8 @@ class SlideRenderer:
             # その他のノードをbodyとして処理する
             self._render_body_node(
                 slide, node, layout_def, reference_doc,
-                incremental=metadata.incremental
+                incremental=metadata.incremental,
+                layout_name=layout_name,
             )
 
     def _render_body_node(
@@ -875,9 +905,14 @@ class SlideRenderer:
         layout_def: LayoutDef,
         reference_doc: str | None,
         incremental: bool = False,
+        layout_name: str = "",
     ) -> None:
         """
         ボディコンテンツのDOMノードをスライドに描画する。
+
+        layout_name が "Content with Caption" の場合、図系ノードを body エリア（idx=1）に、
+        テキスト系ノードを caption エリア（idx=2）にルーティングする。
+        それ以外のレイアウトでは従来通り idx=1 / role="body" に描画する。
 
         Parameters
         ----------
@@ -891,20 +926,205 @@ class SlideRenderer:
             テンプレートファイルのパス。
         incremental : bool
             リストを逐次表示するかどうか。
+        layout_name : str
+            スライドレイアウト名。"Content with Caption" 時にルーティング分岐に使用する。
         """
-        ntype = node.node_type
-        elem = node.element
+        # 図系ノード種別の定義
+        _DIAGRAM_TYPES = (DOMNodeType.MERMAID, DOMNodeType.TABLE, DOMNodeType.FORMULA_BLOCK)
 
-        # body プレースホルダー（idx=1）の存在を確認する
-        body_idx = 1
-        if self._resolve_placeholder(slide, body_idx):
-            self._write_via_placeholder(
-                slide, body_idx, node, "", incremental=incremental
-            )
+        if layout_name == "Content with Caption":
+            if node.node_type in _DIAGRAM_TYPES:
+                # 図系ノード → body エリア (idx=1 / role="body") に描画する
+                if self._resolve_placeholder(slide, 1):
+                    self._write_via_placeholder(
+                        slide, 1, node, "", incremental=incremental
+                    )
+                else:
+                    self._write_via_textbox(
+                        slide, "body", layout_def, node, incremental=incremental
+                    )
+            else:
+                # テキスト系ノード → caption エリア (idx=2 / role="caption") に描画する
+                if self._resolve_placeholder(slide, 2):
+                    self._write_via_placeholder(
+                        slide, 2, node, "", incremental=incremental
+                    )
+                else:
+                    self._write_via_textbox(
+                        slide, "caption", layout_def, node, incremental=incremental
+                    )
         else:
-            self._write_via_textbox(
-                slide, "body", layout_def, node, incremental=incremental
-            )
+            # 従来動作: body プレースホルダー (idx=1 / role="body") に描画する
+            if self._resolve_placeholder(slide, 1):
+                self._write_via_placeholder(
+                    slide, 1, node, "", incremental=incremental
+                )
+            else:
+                self._write_via_textbox(
+                    slide, "body", layout_def, node, incremental=incremental
+                )
+
+    def _collect_body_nodes(
+        self,
+        nodes: list[DOMNodeInfo],
+        metadata: SlideMetadata,
+    ) -> list[DOMNodeInfo]:
+        """
+        ノードリストから body 描画対象のノードを収集して返す。
+
+        NOTES / COLUMNS / INCREMENTAL / NON_INCREMENTAL / H1 /
+        H2（slide_level != 1 の場合）を除いた描画対象ノードを返す。
+
+        Parameters
+        ----------
+        nodes : list[DOMNodeInfo]
+            DOMノードリスト。
+        metadata : SlideMetadata
+            スライドメタデータ（slide_level など）。
+
+        Returns
+        -------
+        list[DOMNodeInfo]
+            body 描画対象のノードリスト。
+        """
+        _SKIP_TYPES = {
+            DOMNodeType.NOTES,
+            DOMNodeType.COLUMNS,
+            DOMNodeType.INCREMENTAL,
+            DOMNodeType.NON_INCREMENTAL,
+        }
+        result: list[DOMNodeInfo] = []
+        for node in nodes:
+            ntype = node.node_type
+            if ntype in _SKIP_TYPES:
+                continue
+            if ntype == DOMNodeType.H1:
+                continue
+            if ntype == DOMNodeType.H2 and metadata.slide_level != 1:
+                continue
+            result.append(node)
+        return result
+
+    def _get_body_area_coords(
+        self,
+        slide: Slide,
+        layout_def: LayoutDef,
+    ) -> tuple[int, int, int, int] | None:
+        """
+        body エリアの座標 (left, top, width, height) を EMU 単位で返す。
+
+        idx=1 のプレースホルダーが存在すればその座標を使用する。
+        存在しない場合は layout_def の role="body" のプレースホルダー定義を使用する。
+        どちらも存在しない場合は None を返す。
+
+        Parameters
+        ----------
+        slide : Slide
+            python-pptx の Slide オブジェクト。
+        layout_def : LayoutDef
+            レイアウト定義オブジェクト。
+
+        Returns
+        -------
+        tuple[int, int, int, int] | None
+            (left, top, width, height) の EMU タプル、取得できない場合は None。
+        """
+        # idx=1 プレースホルダーがあればその座標を使用する
+        ph = self._get_placeholder(slide, 1)
+        if ph is not None:
+            return (int(ph.left), int(ph.top), int(ph.width), int(ph.height))
+
+        # layout_def から role="body" の座標を使用する
+        for ph_info in layout_def.placeholders:
+            if ph_info.role == "body":
+                return (ph_info.left, ph_info.top, ph_info.width, ph_info.height)
+
+        return None
+
+    def _render_body_nodes_vertical_split(
+        self,
+        slide: Slide,
+        body_nodes: list[DOMNodeInfo],
+        layout_def: LayoutDef,
+        reference_doc: str | None,
+        incremental: bool,
+    ) -> None:
+        """
+        body エリアをテキスト系（上半分）と図系（下半分）に縦分割して描画する。
+
+        テキスト系ノード (PARAGRAPH / UL / OL / CODE) を body エリア上半分に、
+        図系ノード (MERMAID / TABLE / FORMULA_BLOCK) を body エリア下半分に描画する。
+        プレースホルダー (idx=1) は使用せず、すべて textbox / 図の直接配置で描画するため
+        コンテンツが重なる問題を回避する。
+
+        Parameters
+        ----------
+        slide : Slide
+            python-pptx の Slide オブジェクト。
+        body_nodes : list[DOMNodeInfo]
+            body 描画対象のノードリスト（_collect_body_nodes の返り値）。
+        layout_def : LayoutDef
+            レイアウト定義オブジェクト。
+        reference_doc : str | None
+            テンプレートファイルのパス。
+        incremental : bool
+            リストを逐次表示するかどうか。
+        """
+        coords = self._get_body_area_coords(slide, layout_def)
+        if coords is None:
+            # body エリア座標が取得できない場合は縦分割せずにスキップする
+            return
+
+        left, top, width, height = coords
+        half_height = height // 2
+
+        _DIAGRAM_TYPES = (DOMNodeType.MERMAID, DOMNodeType.TABLE, DOMNodeType.FORMULA_BLOCK)
+        _TEXT_TYPES = (DOMNodeType.PARAGRAPH, DOMNodeType.UL, DOMNodeType.OL, DOMNodeType.CODE)
+
+        # テキスト系ノードと図系ノードに分類する
+        text_nodes = [n for n in body_nodes if n.node_type in _TEXT_TYPES]
+        diagram_nodes = [n for n in body_nodes if n.node_type in _DIAGRAM_TYPES]
+
+        # --- 上半分: テキスト系ノードを等分割して textbox に描画する ---
+        if text_nodes:
+            slot_height = half_height // len(text_nodes)
+            for i, node in enumerate(text_nodes):
+                t = top + i * slot_height
+                shape = slide.shapes.add_textbox(
+                    Emu(left), Emu(t), Emu(width), Emu(slot_height)
+                )
+                ntype = node.node_type
+                elem = node.element
+                if ntype == DOMNodeType.PARAGRAPH:
+                    if self._has_inline_formula(elem):
+                        self._render_paragraph_with_inline(shape, elem)
+                    else:
+                        self._text_renderer.render_paragraph(shape, elem)
+                elif ntype in (DOMNodeType.UL, DOMNodeType.OL):
+                    self._text_renderer.render_list(shape, elem, incremental=incremental)
+                elif ntype == DOMNodeType.CODE:
+                    self._text_renderer.render_code(shape, elem)
+
+        # --- 下半分: 図系ノードを等分割して直接描画する ---
+        if diagram_nodes:
+            diagram_top = top + half_height
+            slot_height = half_height // len(diagram_nodes)
+            for i, node in enumerate(diagram_nodes):
+                t = diagram_top + i * slot_height
+                ntype = node.node_type
+                elem = node.element
+                if ntype == DOMNodeType.TABLE:
+                    self._text_renderer.render_table(
+                        slide, elem, left, t, width, slot_height
+                    )
+                elif ntype == DOMNodeType.MERMAID:
+                    self._mermaid_renderer.render(
+                        slide, elem, left, t, width, slot_height
+                    )
+                elif ntype == DOMNodeType.FORMULA_BLOCK:
+                    self._formula_renderer.render_block(
+                        slide, elem, left, t, width, slot_height
+                    )
 
     def _render_columns(
         self,

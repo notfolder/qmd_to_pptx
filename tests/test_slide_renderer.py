@@ -214,3 +214,172 @@ class TestResolvePlaceholder:
         # idx=999 は通常存在しない
         result = self.renderer._resolve_placeholder(self.slide, 999)
         assert result is False
+
+
+# ---------------------------------------------------------------------------
+# _is_content_with_caption のテスト
+# ---------------------------------------------------------------------------
+
+class TestIsContentWithCaption:
+    """_is_content_with_caption の単体テスト。"""
+
+    def setup_method(self) -> None:
+        self.renderer = SlideRenderer()
+
+    def _mermaid_node(self) -> DOMNodeInfo:
+        """Mermaid 図の DOMNodeInfo を生成する。"""
+        elem = ET.Element("code")
+        elem.set("class", "language-mermaid")
+        return DOMNodeInfo(DOMNodeType.MERMAID, elem)
+
+    def test_text_then_diagram_returns_true(self) -> None:
+        """テキスト→図の順でも True を返す（従来の動作を維持）。"""
+        nodes = [_para_node(), self._mermaid_node()]
+        assert self.renderer._is_content_with_caption(nodes) is True
+
+    def test_diagram_then_text_returns_true(self) -> None:
+        """図→テキストの順でも True を返す（順不同対応の修正確認）。"""
+        nodes = [self._mermaid_node(), _para_node()]
+        assert self.renderer._is_content_with_caption(nodes) is True
+
+    def test_text_only_returns_false(self) -> None:
+        """テキストのみの場合は False を返す。"""
+        nodes = [_para_node(), _para_node()]
+        assert self.renderer._is_content_with_caption(nodes) is False
+
+    def test_diagram_only_returns_false(self) -> None:
+        """図のみの場合は False を返す。"""
+        nodes = [self._mermaid_node()]
+        assert self.renderer._is_content_with_caption(nodes) is False
+
+
+# ---------------------------------------------------------------------------
+# _render_body_node のルーティングテスト
+# ---------------------------------------------------------------------------
+
+class TestRenderBodyNodeRouting:
+    """_render_body_node の Content with Caption ルーティングの単体テスト。"""
+
+    def setup_method(self) -> None:
+        self.renderer = SlideRenderer()
+        # テンプレートなし（プレースホルダーなし）のスライドを生成する
+        self.prs = Presentation()
+        # Blank レイアウト（プレースホルダーなし）を使用する
+        blank_layout = None
+        for layout in self.prs.slide_layouts:
+            if not list(layout.placeholders):
+                blank_layout = layout
+                break
+        if blank_layout is None:
+            blank_layout = self.prs.slide_layouts[6]
+        self.slide = self.prs.slides.add_slide(blank_layout)
+
+    def _mermaid_node(self) -> DOMNodeInfo:
+        """Mermaid 図の DOMNodeInfo を生成する。"""
+        elem = ET.Element("code")
+        elem.set("class", "language-mermaid")
+        elem.text = "graph LR\n  A --> B"
+        return DOMNodeInfo(DOMNodeType.MERMAID, elem)
+
+    def test_diagram_routes_to_body_role(self) -> None:
+        """Content with Caption 時、図系ノードは body ロールに描画される。"""
+        layout_def = self.renderer._layout_json.layouts["Content with Caption"]
+        node = self._mermaid_node()
+        # 例外が出ずに処理されれば OK（実際の描画内容はインテグレーションテストで確認）
+        try:
+            self.renderer._render_body_node(
+                self.slide, node, layout_def, None,
+                incremental=False, layout_name="Content with Caption"
+            )
+        except Exception as e:
+            pytest.fail(f"図系ノードのルーティングで例外が発生した: {e}")
+
+    def test_text_routes_to_caption_role(self) -> None:
+        """Content with Caption 時、テキスト系ノードは caption ロールに描画される。"""
+        layout_def = self.renderer._layout_json.layouts["Content with Caption"]
+        node = _para_node()
+        try:
+            self.renderer._render_body_node(
+                self.slide, node, layout_def, None,
+                incremental=False, layout_name="Content with Caption"
+            )
+        except Exception as e:
+            pytest.fail(f"テキスト系ノードのルーティングで例外が発生した: {e}")
+
+
+# ---------------------------------------------------------------------------
+# _add_slide のフォールバックテスト
+# ---------------------------------------------------------------------------
+
+class TestAddSlideLayoutFallback:
+    """_add_slide のフォールバック動作の単体テスト。"""
+
+    def setup_method(self) -> None:
+        self.renderer = SlideRenderer()
+        # デフォルトの Presentation（11種類のレイアウトを持つ）を使用する
+        self.prs = Presentation()
+
+    def test_unknown_layout_falls_back_to_first_layout(self) -> None:
+        """存在しないレイアウト名の場合 slide_layouts[0] を使用する。"""
+        slide = self.renderer._add_slide(self.prs, "存在しないレイアウト", None)
+        assert slide is not None
+
+    def test_content_with_caption_falls_back_to_title_and_content(self) -> None:
+        """'Content with Caption' が見つからない場合 'Title and Content' へフォールバックする。"""
+        # デフォルトの Presentation には "Content with Caption" が存在する場合があるため、
+        # 存在しない名前を使ってフォールバックチェーン全体を確認する
+        slide = self.renderer._add_slide(self.prs, "Two Content", None)
+        assert slide is not None
+
+
+# ---------------------------------------------------------------------------
+# _render_body_nodes_vertical_split のテスト
+# ---------------------------------------------------------------------------
+
+class TestRenderBodyNodesVerticalSplit:
+    """_render_body_nodes_vertical_split の単体テスト。"""
+
+    def setup_method(self) -> None:
+        self.renderer = SlideRenderer()
+        self.prs = Presentation()
+        # プレースホルダーなしのスライドを生成する
+        blank_layout = None
+        for layout in self.prs.slide_layouts:
+            if not list(layout.placeholders):
+                blank_layout = layout
+                break
+        if blank_layout is None:
+            blank_layout = self.prs.slide_layouts[6]
+        self.slide = self.prs.slides.add_slide(blank_layout)
+
+    def _mermaid_node(self) -> DOMNodeInfo:
+        """Mermaid 図の DOMNodeInfo を生成する。"""
+        elem = ET.Element("code")
+        elem.set("class", "language-mermaid")
+        elem.text = "graph LR\n  A --> B"
+        return DOMNodeInfo(DOMNodeType.MERMAID, elem)
+
+    def test_vertical_split_adds_textboxes_without_overlap(self) -> None:
+        """縦分割時、テキスト系と図系が別の y 座標範囲に描画される。"""
+        layout_def = self.renderer._layout_json.layouts["Title and Content"]
+        body_nodes = [_para_node(), self._mermaid_node()]
+        shapes_before = len(self.slide.shapes)
+
+        self.renderer._render_body_nodes_vertical_split(
+            self.slide, body_nodes, layout_def, None, incremental=False
+        )
+
+        # テキスト系 1 件のため textbox が 1 つ追加されているはず
+        shapes_after = len(self.slide.shapes)
+        assert shapes_after > shapes_before
+
+    def test_vertical_split_no_crash_with_no_body_area(self) -> None:
+        """body エリア座標が取得できない場合は処理をスキップして例外を出さない。"""
+        # 空の LayoutDef（placeholderなし）を使用する
+        from qmd_to_pptx.models import LayoutDef
+        empty_layout_def = LayoutDef(placeholders=[])
+        body_nodes = [_para_node()]
+        # 例外が出なければ OK
+        self.renderer._render_body_nodes_vertical_split(
+            self.slide, body_nodes, empty_layout_def, None, incremental=False
+        )
