@@ -20,6 +20,14 @@ from typing import Iterator
 
 from mcp.server.fastmcp import FastMCP
 
+# MCPサーバーは非同期フレームワーク（FastMCP）上で動作するため、
+# mermaid-parser-py の MermaidParser.parse() が内部で呼ぶ asyncio.run() が
+# 既存イベントループに衝突して RuntimeWarning を引き起こす。
+# nest_asyncio を適用することで、実行中のループ内でも asyncio.run() を
+# ネスト呼び出しできるようにする（適用はサーバー起動モジュール内に限定する）。
+import nest_asyncio
+nest_asyncio.apply()
+
 from . import render
 from .template_registry import TemplateRegistry
 
