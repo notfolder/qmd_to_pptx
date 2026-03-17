@@ -190,9 +190,12 @@ def main() -> None:
     コマンドライン引数を解析してトランスポート方式に応じてサーバーを起動する。
     ログはすべて標準エラー出力（stderr）に出力する。
     """
+    # ログフォーマット文字列（タイムスタンプ・レベル・ロガー名・メッセージ）
+    _LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+
     # ルートロガーのハンドラーをstderrに設定する（サードパーティライブラリのログ向け）
     handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    handler.setFormatter(logging.Formatter(_LOG_FORMAT))
     logging.basicConfig(handlers=[handler], level=logging.INFO)
 
     # qmd_to_pptx パッケージロガーのハンドラーをstdoutからstderrに切り替える
@@ -200,7 +203,7 @@ def main() -> None:
     pkg_logger = logging.getLogger("qmd_to_pptx")
     pkg_logger.handlers.clear()
     stderr_handler = logging.StreamHandler(sys.stderr)
-    stderr_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    stderr_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
     pkg_logger.addHandler(stderr_handler)
     pkg_logger.setLevel(logging.WARNING)
     pkg_logger.propagate = False

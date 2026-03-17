@@ -281,7 +281,8 @@ class BaseDiagramRenderer:
             高さ（EMU）。
         """
         # 先頭行からダイアグラム種別を取得してログに記録する
-        first_line = mermaid_text.splitlines()[0].strip() if mermaid_text else ""
+        lines = mermaid_text.splitlines() if mermaid_text else []
+        first_line = lines[0].strip() if lines else ""
         logger.warning(
             "Mermaidダイアグラムの描画にフォールバックしました（テキストボックス表示）: %s",
             first_line,
