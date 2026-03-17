@@ -117,3 +117,36 @@ class TestSlideSplitter:
         text = _FRONTMATTER + "## スライド\n\n   内容   \n"
         slides = self.splitter.split(text, slide_level=2)
         assert slides[0].body_text == "内容"
+
+    # --- 空ページが発生しないことのテスト ---
+
+    def test_ruler_followed_by_heading_no_empty_slide(self) -> None:
+        """--- の直後に ## が続いても空スライドが生成されない。"""
+        text = _FRONTMATTER + "## スライド1\n\n内容1\n\n---\n\n## スライド2\n\n内容2\n"
+        slides = self.splitter.split(text, slide_level=2)
+        # 空スライドなしで3枚（スライド1, ---で区切られた空タイトル部, スライド2）ではなく2枚
+        assert len(slides) == 2
+        assert slides[0].title == "スライド1"
+        assert slides[1].title == "スライド2"
+
+    def test_trailing_ruler_no_empty_slide(self) -> None:
+        """末尾の --- だけで終わるテキストで空スライドが生成されない。"""
+        text = _FRONTMATTER + "## スライド1\n\n内容\n\n---\n"
+        slides = self.splitter.split(text, slide_level=2)
+        assert len(slides) == 1
+        assert slides[0].title == "スライド1"
+
+    def test_consecutive_rulers_no_empty_slides(self) -> None:
+        """連続する --- で空スライドが生成されない。"""
+        text = _FRONTMATTER + "---\n\n---\n\n## スライド\n\n内容\n"
+        slides = self.splitter.split(text, slide_level=2)
+        assert len(slides) == 1
+        assert slides[0].title == "スライド"
+
+    def test_ruler_with_content_is_kept(self) -> None:
+        """--- の後に本文があるスライドは保持される。"""
+        text = _FRONTMATTER + "---\n\n内容テキスト\n"
+        slides = self.splitter.split(text, slide_level=2)
+        assert len(slides) == 1
+        assert slides[0].body_text == "内容テキスト"
+        assert slides[0].title == ""

@@ -80,12 +80,14 @@ class SlideSplitter:
 
             # 最初の区切り前のテキストは本文として保留しておく
             if pending_sep_type is not None:
-                parts.append(SlideContent(
-                    body_text=chunk,
-                    separator_type=pending_sep_type,
-                    title=pending_title,
-                    background_image=pending_bg,
-                ))
+                # 本文もタイトルも空のスライドは出力しない（--- と ## の連続等で発生）
+                if chunk or pending_title:
+                    parts.append(SlideContent(
+                        body_text=chunk,
+                        separator_type=pending_sep_type,
+                        title=pending_title,
+                        background_image=pending_bg,
+                    ))
 
             sep_line = match.group(1)
             pending_sep_type, pending_title, pending_bg = self._parse_separator(
@@ -96,12 +98,14 @@ class SlideSplitter:
         # 最後のチャンクを追加する
         if pending_sep_type is not None:
             last_chunk = body[last_end:].strip()
-            parts.append(SlideContent(
-                body_text=last_chunk,
-                separator_type=pending_sep_type,
-                title=pending_title,
-                background_image=pending_bg,
-            ))
+            # 本文もタイトルも空のスライドは出力しない（末尾の --- 等で発生）
+            if last_chunk or pending_title:
+                parts.append(SlideContent(
+                    body_text=last_chunk,
+                    separator_type=pending_sep_type,
+                    title=pending_title,
+                    background_image=pending_bg,
+                ))
 
         return parts
 
