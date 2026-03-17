@@ -405,6 +405,164 @@ gantt
         # 日付が認識できないためタスクは 0 件
         assert len(chart.sections[0].tasks) == 0
 
+
+class TestParseGanttAdditionalFormats:
+    """追加対応 dateFormat のパーステスト。"""
+
+    def test_yyyy_slash_mm_dd(self):
+        """YYYY/MM/DD 形式の日付を正しくパースできる。"""
+        text = """\
+gantt
+    dateFormat YYYY/MM/DD
+    section S
+        タスクA :a1, 2025/01/15, 2025/03/31
+"""
+        chart = parse_gantt(text)
+        t = chart.sections[0].tasks[0]
+        assert t.start_date == date(2025, 1, 15)
+        assert t.end_date == date(2025, 3, 31)
+
+    def test_dd_dot_mm_dot_yyyy(self):
+        """DD.MM.YYYY 形式（欧州ドット区切り）の日付を正しくパースできる。"""
+        text = """\
+gantt
+    dateFormat DD.MM.YYYY
+    section S
+        タスクA :a1, 15.01.2025, 31.03.2025
+"""
+        chart = parse_gantt(text)
+        t = chart.sections[0].tasks[0]
+        assert t.start_date == date(2025, 1, 15)
+        assert t.end_date == date(2025, 3, 31)
+
+    def test_mm_dash_dd_dash_yyyy(self):
+        """MM-DD-YYYY 形式（米国ハイフン）の日付を正しくパースできる。"""
+        text = """\
+gantt
+    dateFormat MM-DD-YYYY
+    section S
+        タスクA :a1, 01-15-2025, 03-31-2025
+"""
+        chart = parse_gantt(text)
+        t = chart.sections[0].tasks[0]
+        assert t.start_date == date(2025, 1, 15)
+        assert t.end_date == date(2025, 3, 31)
+
+    def test_yy_mm_dd(self):
+        """YY-MM-DD 形式（2桁年）の日付を正しくパースできる。"""
+        text = """\
+gantt
+    dateFormat YY-MM-DD
+    section S
+        タスクA :a1, 25-01-15, 25-03-31
+"""
+        chart = parse_gantt(text)
+        t = chart.sections[0].tasks[0]
+        assert t.start_date == date(2025, 1, 15)
+        assert t.end_date == date(2025, 3, 31)
+
+    def test_yy_slash_mm_dd(self):
+        """YY/MM/DD 形式（2桁年スラッシュ）の日付を正しくパースできる。"""
+        text = """\
+gantt
+    dateFormat YY/MM/DD
+    section S
+        タスクA :a1, 25/01/15, 25/03/31
+"""
+        chart = parse_gantt(text)
+        t = chart.sections[0].tasks[0]
+        assert t.start_date == date(2025, 1, 15)
+        assert t.end_date == date(2025, 3, 31)
+
+    def test_d_slash_m_slash_yyyy(self):
+        """D/M/YYYY 形式（日/月/年 スラッシュ）の日付を正しくパースできる。"""
+        text = """\
+gantt
+    dateFormat D/M/YYYY
+    section S
+        タスクA :a1, 15/1/2025, 31/3/2025
+"""
+        chart = parse_gantt(text)
+        t = chart.sections[0].tasks[0]
+        assert t.start_date == date(2025, 1, 15)
+        assert t.end_date == date(2025, 3, 31)
+
+    def test_yyyy_slash_mm_dd_with_time(self):
+        """YYYY/MM/DD HH:mm 形式（スラッシュ＋時刻）の日付を正しくパースできる（時刻は切り捨て）。"""
+        text = """\
+gantt
+    dateFormat YYYY/MM/DD HH:mm
+    section S
+        タスクA :a1, 2025/01/15 09:00, 7d
+"""
+        chart = parse_gantt(text)
+        t = chart.sections[0].tasks[0]
+        assert t.start_date == date(2025, 1, 15)
+
+    def test_timezone_iso_z(self):
+        """YYYY-MM-DDTHH:mm:ssZ 形式（UTC Z 表記）の日付を正しくパースできる。"""
+        text = """\
+gantt
+    dateFormat YYYY-MM-DDTHH:mm:ssZ
+    section S
+        タスクA :a1, 2025-01-15T09:00:00Z, 7d
+"""
+        chart = parse_gantt(text)
+        t = chart.sections[0].tasks[0]
+        assert t.start_date == date(2025, 1, 15)
+
+    def test_timezone_iso_offset(self):
+        """YYYY-MM-DDTHH:mm:ssZ 形式（±HH:MM 表記）の日付を正しくパースできる。"""
+        text = """\
+gantt
+    dateFormat YYYY-MM-DDTHH:mm:ssZ
+    section S
+        タスクA :a1, 2025-01-15T09:00:00+09:00, 7d
+"""
+        chart = parse_gantt(text)
+        t = chart.sections[0].tasks[0]
+        assert t.start_date == date(2025, 1, 15)
+
+    def test_dd_mmm_yyyy(self):
+        """DD MMM YYYY 形式（日 英語短縮月名 年）の日付を正しくパースできる。"""
+        text = """\
+gantt
+    dateFormat DD MMM YYYY
+    section S
+        タスクA :a1, 15 Jan 2025, 31 Mar 2025
+"""
+        chart = parse_gantt(text)
+        t = chart.sections[0].tasks[0]
+        assert t.start_date == date(2025, 1, 15)
+        assert t.end_date == date(2025, 3, 31)
+
+    def test_d_mmm_yyyy(self):
+        """D MMM YYYY 形式（1桁日 英語短縮月名 年）の日付を正しくパースできる。"""
+        text = """\
+gantt
+    dateFormat D MMM YYYY
+    section S
+        タスクA :a1, 5 Jan 2025, 1 Apr 2025
+"""
+        chart = parse_gantt(text)
+        t = chart.sections[0].tasks[0]
+        assert t.start_date == date(2025, 1, 5)
+        assert t.end_date == date(2025, 4, 1)
+
+    def test_mmm_case_insensitive(self):
+        """英語月名は大文字小文字を区別しない（JAN, jan, Jan どれでも動作する）。"""
+        text = """\
+gantt
+    dateFormat DD MMM YYYY
+    section S
+        タスクA :a1, 15 JAN 2025, 31 DEC 2025
+"""
+        chart = parse_gantt(text)
+        t = chart.sections[0].tasks[0]
+        assert t.start_date == date(2025, 1, 15)
+        assert t.end_date == date(2025, 12, 31)
+
+
 class TestGanttRenderer:
     """GanttRenderer.render() のスライド出力テスト。"""
 

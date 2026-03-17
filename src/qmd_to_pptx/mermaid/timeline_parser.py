@@ -78,19 +78,22 @@ class TimelineData:
         セクション名リスト（出現順・重複なし）。
     periods : list[TimelinePeriod]
         期間リスト（出現順）。
+    direction : str
+        レイアウト方向。LR（左→右）または TD（上→下）。デフォルトは "TD"。
     """
 
     title: str = ""
     sections: list[str] = field(default_factory=list)
     periods: list[TimelinePeriod] = field(default_factory=list)
+    direction: str = "TD"
 
 
 # ---------------------------------------------------------------------------
 # 正規表現パターン
 # ---------------------------------------------------------------------------
 
-# "timeline" ヘッダー行
-_RE_HEADER = re.compile(r"^\s*timeline\s*$", re.IGNORECASE)
+# "timeline" ヘッダー行（direction オプション付き: timeline LR / timeline TD）
+_RE_HEADER = re.compile(r"^\s*timeline(?:\s+(?P<dir>LR|TD))?\s*$", re.IGNORECASE)
 
 # "title <text>" 行
 _RE_TITLE = re.compile(r"^\s*title\s+(.+)", re.IGNORECASE)
@@ -98,8 +101,8 @@ _RE_TITLE = re.compile(r"^\s*title\s+(.+)", re.IGNORECASE)
 # "section <name>" 行（名前にコロンを含まない）
 _RE_SECTION = re.compile(r"^\s*section\s+([^:\n]+)", re.IGNORECASE)
 
-# コメント行（"%%"で始まる）
-_RE_COMMENT = re.compile(r"^\s*%%")
+# コメント行（"%%"で始まる、または "#" で始まる）
+_RE_COMMENT = re.compile(r"^\s*(?:%%|#)")
 
 # アクセシビリティ記述行（"accTitle:" / "accDescr:"）をスキップ
 _RE_ACC = re.compile(r"^\s*acc(?:Title|Descr)\b", re.IGNORECASE)
@@ -179,6 +182,7 @@ def parse_timeline(text: str) -> TimelineData:
     sections: list[str] = []
     periods: list[TimelinePeriod] = []
     current_section: str | None = None
+    direction: str = "TD"               # デフォルトは上→下（TD）
     # セクション名の重複排除用
     seen_sections: dict[str, None] = {}
 
@@ -189,8 +193,12 @@ def parse_timeline(text: str) -> TimelineData:
         if not stripped or _RE_COMMENT.match(line) or _RE_ACC.match(line):
             continue
 
-        # "timeline" ヘッダー行はスキップ
-        if _RE_HEADER.match(stripped):
+        # "timeline" ヘッダー行（direction オプションを取得）
+        m_header = _RE_HEADER.match(stripped)
+        if m_header:
+            dir_token = m_header.group("dir")
+            if dir_token:
+                direction = dir_token.upper()
             continue
 
         # title 行
@@ -271,4 +279,5 @@ def parse_timeline(text: str) -> TimelineData:
         title=title,
         sections=sections,
         periods=periods,
+        direction=direction,
     )
